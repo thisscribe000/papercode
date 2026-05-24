@@ -1,20 +1,35 @@
-import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
 import '../providers/connection_provider.dart';
+import '../providers/ollama_provider.dart';
+import '../services/ai_service.dart';
+import '../exceptions/ai_service_exception.dart';
 import '../widgets/confirm_command_sheet.dart';
 
 class _ChatMessage {
   final String role;
   final String content;
   final DateTime timestamp;
+  final bool streaming;
 
-  _ChatMessage({required this.role, required this.content, DateTime? timestamp})
-      : timestamp = timestamp ?? DateTime.now();
+  _ChatMessage({
+    required this.role,
+    required this.content,
+    DateTime? timestamp,
+    this.streaming = false,
+  }) : timestamp = timestamp ?? DateTime.now();
+
+  _ChatMessage copyWith({String? content, bool? streaming}) {
+    return _ChatMessage(
+      role: role,
+      content: content ?? this.content,
+      timestamp: timestamp,
+      streaming: streaming ?? this.streaming,
+    );
+  }
 }
 
 class ChatScreen extends StatefulWidget {
@@ -32,6 +47,7 @@ class _ChatScreenState extends State<ChatScreen>
   final _focusNode = FocusNode();
   bool _isWaiting = false;
   String? _errorMessage;
+  StreamSubscription<String>? _streamSub;
   late AnimationController _dotAnimController;
 
   @override
@@ -45,6 +61,7 @@ class _ChatScreenState extends State<ChatScreen>
 
   @override
   void dispose() {
+    _streamSub?.cancel();
     _inputController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
@@ -100,57 +117,71 @@ class _ChatScreenState extends State<ChatScreen>
     });
     _scrollToBottom();
 
-    try {
-      final provider = context.read<ConnectionProvider>();
-      final apiKey = provider.apiKey;
-
-      if (apiKey.isEmpty) {
-        throw Exception('API key not configured. Add it in the Connect screen.');
-      }
-
-      final systemPrompt = _buildSystemPrompt(provider);
-      final apiMessages = [
-        {'role': 'system', 'content': systemPrompt},
-        for (final m in _messages)
-          {'role': m.role == 'user' ? 'user' : 'assistant', 'content': m.content},
-      ];
-
-      final response = await http
-          .post(
-            Uri.parse('https://api.deepseek.com/v1/chat/completions'),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer $apiKey',
-            },
-            body: jsonEncode({
-              'model': 'deepseek-chat',
-              'messages': apiMessages,
-              'stream': false,
-            }),
-          )
-          .timeout(const Duration(seconds: 60));
-
-      if (response.statusCode != 200) {
-        final body = tryDecode(response.body);
-        final errMsg =
-            body is Map ? body['error']?.toString() ?? response.body : response.body;
-        throw Exception('API error ${response.statusCode}: $errMsg');
-      }
-
-      final body = jsonDecode(response.body);
-      final content = body['choices']?[0]?['message']?['content'] as String?;
-
-      if (content == null || content.isEmpty) {
-        throw Exception('Empty response from API');
-      }
-
+    final provider = context.read<ConnectionProvider>();
+    if (!provider.activeProviderHasKey) {
+      final err = provider.providerValidationError ?? 'No API key configured';
       setState(() {
-        _messages.add(_ChatMessage(role: 'assistant', content: content));
+        _errorMessage = '⚠ $err. Go to Settings → AI to add one.';
         _isWaiting = false;
       });
+      return;
+    }
+
+    try {
+      final ollamaProvider = context.read<OllamaProvider>();
+      final aiService = AIService.fromProvider(provider, ollama: ollamaProvider);
+
+      final history = _messages
+          .where((m) => !m.streaming)
+          .map((m) => {'role': m.role == 'user' ? 'user' : 'assistant', 'content': m.content})
+          .toList();
+
+      final systemPrompt = _buildSystemPrompt(provider);
+      final stream = await aiService.sendMessage(
+        history: history,
+        systemPrompt: systemPrompt,
+      );
+
+      final msgIndex = _messages.length;
+
+      _messages.add(_ChatMessage(role: 'assistant', content: '', streaming: true));
+
+      _streamSub = stream.listen(
+        (chunk) {
+          if (!mounted) return;
+          setState(() {
+            _messages[msgIndex] = _messages[msgIndex].copyWith(
+              content: _messages[msgIndex].content + chunk,
+            );
+          });
+          _scrollToBottom();
+        },
+        onDone: () {
+          if (!mounted) return;
+          setState(() {
+            _messages[msgIndex] = _messages[msgIndex].copyWith(streaming: false);
+            _isWaiting = false;
+          });
+        },
+        onError: (e) {
+          if (!mounted) return;
+          if (_messages.length > msgIndex) {
+            final existing = _messages[msgIndex].content;
+            if (existing.isEmpty) {
+              _messages.removeAt(msgIndex);
+            } else {
+              _messages[msgIndex] = _messages[msgIndex].copyWith(streaming: false);
+            }
+          }
+          setState(() {
+            _errorMessage = e is AIServiceException ? e.toString() : 'Error: $e';
+            _isWaiting = false;
+          });
+        },
+      );
     } catch (e) {
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = e is AIServiceException ? e.toString() : 'Error: $e';
         _isWaiting = false;
       });
     }
@@ -158,18 +189,12 @@ class _ChatScreenState extends State<ChatScreen>
     _scrollToBottom();
   }
 
-  dynamic tryDecode(String body) {
-    try {
-      return jsonDecode(body);
-    } catch (_) {
-      return null;
-    }
-  }
-
   void _newSession() {
+    _streamSub?.cancel();
     setState(() {
       _messages.clear();
       _errorMessage = null;
+      _isWaiting = false;
     });
     context.read<ConnectionProvider>().setActiveFile('', '');
   }
@@ -234,7 +259,12 @@ class _ChatScreenState extends State<ChatScreen>
     return Scaffold(
       body: Column(
         children: [
-          _TopBar(isDark: isDark, onNewSession: _newSession),
+          _TopBar(
+            isDark: isDark,
+            onNewSession: _newSession,
+            providerName: provider.activeProvider.name,
+            providerColor: provider.activeProvider.dotColor,
+          ),
           Expanded(
             child: _messages.isEmpty && !_isWaiting
                 ? _WelcomeState(
@@ -245,9 +275,9 @@ class _ChatScreenState extends State<ChatScreen>
                 : ListView.builder(
                     controller: _scrollController,
                     padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                    itemCount: _messages.length + (_isWaiting ? 1 : 0),
+                    itemCount: _messages.length + (_isWaiting && _messages.lastOrNull?.streaming != true ? 1 : 0),
                     itemBuilder: (context, index) {
-                      if (index == _messages.length && _isWaiting) {
+                      if (index >= _messages.length) {
                         return _TypingIndicator(
                           animController: _dotAnimController,
                           isDark: isDark,
@@ -258,7 +288,7 @@ class _ChatScreenState extends State<ChatScreen>
                         message: msg,
                         isDark: isDark,
                         theme: theme,
-                        onRunCommand: msg.role == 'assistant'
+                        onRunCommand: msg.role == 'assistant' && !msg.streaming
                             ? (cmd) => _runCommand(cmd)
                             : null,
                         onLongPress: () => _copyMessage(msg.content),
@@ -300,8 +330,15 @@ class _ChatScreenState extends State<ChatScreen>
 class _TopBar extends StatelessWidget {
   final bool isDark;
   final VoidCallback onNewSession;
+  final String providerName;
+  final Color providerColor;
 
-  const _TopBar({required this.isDark, required this.onNewSession});
+  const _TopBar({
+    required this.isDark,
+    required this.onNewSession,
+    required this.providerName,
+    required this.providerColor,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -325,6 +362,23 @@ class _TopBar extends StatelessWidget {
               fontSize: 13,
               fontWeight: FontWeight.w600,
               color: isDark ? const Color(0xFFCCCCCC) : const Color(0xFF333333),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: providerColor,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            providerName,
+            style: GoogleFonts.dmMono(
+              fontSize: 9,
+              color: isDark ? const Color(0xFF555555) : const Color(0xFFBBBBBB),
             ),
           ),
           const Spacer(),
@@ -450,7 +504,7 @@ class _MessageBubble extends StatelessWidget {
         crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
           GestureDetector(
-            onLongPress: onLongPress,
+            onLongPress: message.streaming ? null : onLongPress,
             child: Column(
               crossAxisAlignment:
                   isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -459,17 +513,34 @@ class _MessageBubble extends StatelessWidget {
                   seg.isCode
                       ? _CodeBlock(seg: seg, onRunCommand: onRunCommand)
                       : _TextBlock(seg: seg, isUser: isUser, isDark: isDark, theme: theme),
+                if (message.streaming)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 12),
+                    child: SizedBox(
+                      width: 8,
+                      child: Text(
+                        '▌',
+                        style: GoogleFonts.dmMono(
+                          fontSize: 13,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
-          const SizedBox(height: 3),
-          Text(
-            timeStr,
-            style: GoogleFonts.dmMono(
-              fontSize: 9,
-              color: isDark ? const Color(0xFF555555) : const Color(0xFFBBBBBB),
+          if (!message.streaming)
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Text(
+                timeStr,
+                style: GoogleFonts.dmMono(
+                  fontSize: 9,
+                  color: isDark ? const Color(0xFF555555) : const Color(0xFFBBBBBB),
+                ),
+              ),
             ),
-          ),
         ],
       ),
     );

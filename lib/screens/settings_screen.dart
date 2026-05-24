@@ -3,6 +3,10 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../providers/theme_provider.dart';
 import '../providers/connection_provider.dart';
+import '../providers/ollama_provider.dart';
+import '../models/ai_provider.dart';
+import '../widgets/provider_sheet.dart';
+import 'ollama_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -13,6 +17,7 @@ class SettingsScreen extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
     final themeProvider = context.watch<ThemeProvider>();
     final connectionProvider = context.watch<ConnectionProvider>();
+    final ollamaProvider = context.watch<OllamaProvider>();
 
     return Scaffold(
       body: SafeArea(
@@ -30,7 +35,6 @@ class SettingsScreen extends StatelessWidget {
                     host: v,
                     username: connectionProvider.username,
                     password: connectionProvider.password,
-                    apiKey: connectionProvider.apiKey,
                   );
                 }),
               ),
@@ -44,7 +48,6 @@ class SettingsScreen extends StatelessWidget {
                     host: connectionProvider.host,
                     username: v,
                     password: connectionProvider.password,
-                    apiKey: connectionProvider.apiKey,
                   );
                 }),
               ),
@@ -60,28 +63,97 @@ class SettingsScreen extends StatelessWidget {
                     host: connectionProvider.host,
                     username: connectionProvider.username,
                     password: v,
-                    apiKey: connectionProvider.apiKey,
                   );
                 }, obscure: true),
               ),
               const SizedBox(height: 8),
               _SectionHeader(label: 'AI', isDark: isDark),
               _SettingsRow(
-                label: 'API Key',
-                value: connectionProvider.apiKey.isEmpty
-                    ? 'Not set'
-                    : '${connectionProvider.apiKey.substring(0, 4)}...',
+                label: 'AI Provider',
+                value: connectionProvider.activeProvider.name,
                 isDark: isDark,
-                onTap: () => _editField(
-                    context, 'DeepSeek API Key', connectionProvider.apiKey, (v) {
-                  connectionProvider.setCredentials(
-                    host: connectionProvider.host,
-                    username: connectionProvider.username,
-                    password: connectionProvider.password,
-                    apiKey: v,
-                  );
-                }, obscure: true),
+                onTap: () => showProviderSheet(
+                  context,
+                  connectionProvider.activeProviderType,
+                  (type) => connectionProvider.setActiveProvider(type),
+                ),
+                leading: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: connectionProvider.activeProvider.dotColor,
+                  ),
+                ),
               ),
+              if (connectionProvider.activeProvider.requiresApiKey)
+                _SettingsRow(
+                  label: connectionProvider.activeProvider.apiKeyLabel,
+                  value: connectionProvider.apiKey.isEmpty
+                      ? 'Not set'
+                      : '•••••${connectionProvider.apiKey.substring(connectionProvider.apiKey.length > 6 ? connectionProvider.apiKey.length - 6 : 0)}',
+                  isDark: isDark,
+                  leading: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: connectionProvider.apiKey.isNotEmpty
+                          ? const Color(0xFF44FF88)
+                          : const Color(0xFFFF4444),
+                    ),
+                  ),
+                  onTap: () => _manageApiKey(context, connectionProvider),
+                ),
+              if (connectionProvider.activeProviderType == AIProviderType.custom) ...[
+                _SettingsRow(
+                  label: 'Base URL',
+                  value: connectionProvider.customBaseUrl.isEmpty
+                      ? 'Not set'
+                      : connectionProvider.customBaseUrl,
+                  isDark: isDark,
+                  onTap: () => _editField(
+                    context,
+                    'Base URL',
+                    connectionProvider.customBaseUrl,
+                    (v) => connectionProvider.setCustomBaseUrl(v),
+                  ),
+                ),
+                _SettingsRow(
+                  label: 'Model Name',
+                  value: connectionProvider.customModel.isEmpty
+                      ? 'Not set'
+                      : connectionProvider.customModel,
+                  isDark: isDark,
+                  onTap: () => _editField(
+                    context,
+                    'Model Name',
+                    connectionProvider.customModel,
+                    (v) => connectionProvider.setCustomModel(v),
+                  ),
+                ),
+              ],
+              if (connectionProvider.activeProviderType == AIProviderType.ollama)
+                _SettingsRow(
+                  label: 'Manage Ollama \u2192',
+                  value: ollamaProvider.activeModelName != null
+                      ? 'Model: ${ollamaProvider.activeModelName}'
+                      : null,
+                  isDark: isDark,
+                  leading: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: ollamaProvider.isReachable == true
+                          ? const Color(0xFF44FF88)
+                          : const Color(0xFFFF4444),
+                    ),
+                  ),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const OllamaScreen()),
+                  ),
+                ),
               _SettingsRow(
                 label: 'Permission',
                 value: _permissionLabel(connectionProvider.permissionLevel),
@@ -259,6 +331,147 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 ),
               ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String _keyHelperText(AIProvider provider) {
+    if (provider.type == AIProviderType.ollama) {
+      return 'No key needed — make sure Ollama is running';
+    }
+    if (provider.type == AIProviderType.custom) {
+      return 'Enter your OpenAI-compatible endpoint key';
+    }
+    return 'Get your key at ${provider.keyHelperUrl ?? provider.baseUrl}';
+  }
+
+  void _manageApiKey(BuildContext context, ConnectionProvider provider) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = Theme.of(context).colorScheme.primary;
+    final activeProvider = provider.activeProvider;
+    final hasKey = provider.apiKey.isNotEmpty;
+    final controller = TextEditingController(text: provider.apiKey);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? const Color(0xFF141414) : const Color(0xFFFFFFFF),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 20, 16, MediaQuery.of(ctx).viewInsets.bottom + 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                activeProvider.name,
+                style: GoogleFonts.dmMono(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(ctx).colorScheme.onSurface,
+                ),
+              ),
+              if (hasKey) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Current key: •••••${provider.apiKey.substring(provider.apiKey.length > 6 ? provider.apiKey.length - 6 : 0)}',
+                  style: GoogleFonts.dmMono(
+                    fontSize: 11,
+                    color: isDark ? const Color(0xFF555555) : const Color(0xFFAAAAAA),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                obscureText: true,
+                autofocus: !hasKey,
+                style: GoogleFonts.dmMono(
+                  fontSize: 14,
+                  color: Theme.of(ctx).colorScheme.onSurface,
+                ),
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: hasKey ? 'Paste new key to replace...' : 'Paste your API key',
+                  hintStyle: GoogleFonts.dmMono(
+                    fontSize: 12,
+                    color: isDark ? const Color(0xFF555555) : const Color(0xFFAAAAAA),
+                  ),
+                  border: UnderlineInputBorder(
+                    borderSide: BorderSide(
+                      color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE0E0E0),
+                    ),
+                  ),
+                  enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(
+                      color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE0E0E0),
+                    ),
+                  ),
+                  focusedBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: accent, width: 1.5),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _keyHelperText(activeProvider),
+                style: GoogleFonts.dmMono(
+                  fontSize: 9,
+                  color: isDark ? const Color(0xFF444444) : const Color(0xFFBBBBBB),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 38,
+                child: FilledButton(
+                  onPressed: () {
+                    final val = controller.text.trim();
+                    if (val.isNotEmpty) {
+                      provider.setApiKey(activeProvider.type, val);
+                    }
+                    Navigator.of(ctx).pop();
+                  },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: accent,
+                    foregroundColor: const Color(0xFF0A0A0A),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  child: Text(
+                    'Save',
+                    style: GoogleFonts.dmMono(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              if (hasKey) ...[
+                const SizedBox(height: 8),
+                GestureDetector(
+                  onTap: () {
+                    provider.clearApiKey(activeProvider.type);
+                    Navigator.of(ctx).pop();
+                  },
+                  child: Center(
+                    child: Text(
+                      'Clear key',
+                      style: GoogleFonts.dmMono(
+                        fontSize: 11,
+                        color: const Color(0xFFFF4444).withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         );
@@ -464,6 +677,7 @@ class _SettingsRow extends StatelessWidget {
   final VoidCallback? onTap;
   final Color? labelColor;
   final Widget? trailing;
+  final Widget? leading;
 
   const _SettingsRow({
     required this.label,
@@ -472,6 +686,7 @@ class _SettingsRow extends StatelessWidget {
     this.onTap,
     this.labelColor,
     this.trailing,
+    this.leading,
   });
 
   @override
@@ -490,6 +705,10 @@ class _SettingsRow extends StatelessWidget {
         ),
         child: Row(
           children: [
+            if (leading != null) ...[
+              leading!,
+              const SizedBox(width: 8),
+            ],
             Expanded(
               child: Text(
                 label,
@@ -569,8 +788,7 @@ class _AccentColorRow extends StatelessWidget {
 
   void _showPicker(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final currentAccent =
-        context.read<ThemeProvider>().accentColor;
+    final currentAccent = context.read<ThemeProvider>().accentColor;
 
     showModalBottomSheet(
       context: context,

@@ -4,6 +4,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'theme/app_theme.dart';
 import 'providers/theme_provider.dart';
 import 'providers/connection_provider.dart';
+import 'providers/lan_scanner_provider.dart';
+import 'providers/ollama_provider.dart';
 import 'screens/connect_screen.dart';
 import 'screens/chat_screen.dart';
 import 'screens/terminal_screen.dart';
@@ -20,6 +22,8 @@ void main() {
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => ConnectionProvider()),
+        ChangeNotifierProvider(create: (_) => LANScannerProvider()),
+        ChangeNotifierProvider(create: (_) => OllamaProvider()),
       ],
       child: const PaperCodeApp(),
     ),

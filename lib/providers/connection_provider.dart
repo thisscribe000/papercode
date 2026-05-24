@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:xterm/xterm.dart';
+import '../models/ai_provider.dart';
+import '../models/server_profile.dart';
+import '../services/server_profile_service.dart';
 
 enum PermissionLevel { readOnly, askMe, fullAccess }
 
@@ -10,13 +13,10 @@ enum ConnState { disconnected, connecting, connected, error }
 
 class ConnectionProvider extends ChangeNotifier {
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  late final ServerProfileService _profileService;
 
   ConnState _state = ConnState.disconnected;
   String? _errorMessage;
-  String _host = '';
-  String _username = '';
-  String _password = '';
-  String _apiKey = '';
   SSHClient? _client;
   SSHSession? _terminalSession;
   Terminal? _terminal;
@@ -25,14 +25,29 @@ class ConnectionProvider extends ChangeNotifier {
   PermissionLevel _permissionLevel = PermissionLevel.askMe;
   bool _terminalActive = false;
 
+  AIProviderType _activeProviderType = AIProviderType.deepseek;
+  final Map<AIProviderType, String> _apiKeys = {};
+  String _customBaseUrl = '';
+  String _customModel = '';
+
+  List<ServerProfile> _profiles = [];
+  ServerProfile? _activeProfile;
+  String? _lastActiveProfileId;
+  bool _autoConnect = true;
+
   ConnState get state => _state;
   bool get isConnected => _state == ConnState.connected;
   bool get isConnecting => _state == ConnState.connecting;
   String? get errorMessage => _errorMessage;
-  String get host => _host;
-  String get username => _username;
-  String get password => _password;
-  String get apiKey => _apiKey;
+
+  ServerProfile? get activeProfile => _activeProfile;
+  List<ServerProfile> get profiles => _profiles;
+  bool get autoConnect => _autoConnect;
+
+  String get host => _activeProfile?.host ?? '';
+  String get username => _activeProfile?.username ?? '';
+  String get password => _activeProfile?.password ?? '';
+
   SSHClient? get client => _client;
   SSHSession? get terminalSession => _terminalSession;
   Terminal? get terminal => _terminal;
@@ -41,17 +56,59 @@ class ConnectionProvider extends ChangeNotifier {
   String? get activeFileContents => _activeFileContents;
   PermissionLevel get permissionLevel => _permissionLevel;
 
-  bool get hasSavedCredentials => _host.isNotEmpty && _username.isNotEmpty;
+  AIProvider get activeProvider => AIProvider.byType(_activeProviderType);
+  AIProviderType get activeProviderType => _activeProviderType;
+  String get apiKey => _apiKeys[_activeProviderType] ?? '';
+  String get customBaseUrl => _customBaseUrl;
+  String get customModel => _customModel;
+  bool get hasSavedCredentials => _activeProfile != null;
+
+  bool hasApiKey(AIProviderType type) {
+    if (AIProvider.byType(type).requiresApiKey == false) return true;
+    final key = _apiKeys[type];
+    return key != null && key.isNotEmpty;
+  }
+
+  bool get activeProviderHasKey {
+    if (!activeProvider.requiresApiKey) return true;
+    return apiKey.isNotEmpty;
+  }
+
+  String? get providerValidationError {
+    if (_activeProviderType == AIProviderType.custom) {
+      if (_customBaseUrl.isEmpty) return 'No base URL set for Custom provider';
+    }
+    if (activeProvider.requiresApiKey && !hasApiKey(_activeProviderType)) {
+      return 'No API key set for ${activeProvider.name}';
+    }
+    return null;
+  }
 
   ConnectionProvider() {
+    _profileService = ServerProfileService(_storage);
     _loadAll();
   }
 
   Future<void> _loadAll() async {
-    _host = await _storage.read(key: 'ssh_host') ?? '';
-    _username = await _storage.read(key: 'ssh_username') ?? '';
-    _password = await _storage.read(key: 'ssh_password') ?? '';
-    _apiKey = await _storage.read(key: 'deepseek_api_key') ?? '';
+    for (final type in AIProviderType.values) {
+      final keyName = 'apikey_${type.name}';
+      final val = await _storage.read(key: keyName);
+      if (val != null && val.isNotEmpty) {
+        _apiKeys[type] = val;
+      }
+    }
+
+    final savedProvider = await _storage.read(key: 'active_provider');
+    if (savedProvider != null) {
+      _activeProviderType = AIProviderType.values.firstWhere(
+        (e) => e.name == savedProvider,
+        orElse: () => AIProviderType.deepseek,
+      );
+    }
+
+    _customBaseUrl = await _storage.read(key: 'custom_base_url') ?? '';
+    _customModel = await _storage.read(key: 'custom_model') ?? '';
+
     final perm = await _storage.read(key: 'permission_level');
     if (perm != null) {
       _permissionLevel = PermissionLevel.values.firstWhere(
@@ -59,18 +116,61 @@ class ConnectionProvider extends ChangeNotifier {
         orElse: () => PermissionLevel.askMe,
       );
     }
+
+    final auto = await _storage.read(key: 'auto_connect');
+    _autoConnect = auto != 'false';
+
+    _lastActiveProfileId = await _storage.read(key: 'last_active_profile');
+    _profiles = await _profileService.loadAll();
+
     notifyListeners();
 
-    if (hasSavedCredentials) {
-      connect();
+    if (_autoConnect && _lastActiveProfileId != null) {
+      final profile = _profiles.firstWhere(
+        (p) => p.id == _lastActiveProfileId,
+        orElse: () => _profiles.isNotEmpty ? _profiles.first : ServerProfile(id: '', name: '', host: '', username: ''),
+      );
+      if (profile.host.isNotEmpty && profile.username.isNotEmpty) {
+        _activeProfile = profile;
+        connect();
+      }
     }
   }
 
-  Future<void> _saveCredentials() async {
-    await _storage.write(key: 'ssh_host', value: _host);
-    await _storage.write(key: 'ssh_username', value: _username);
-    await _storage.write(key: 'ssh_password', value: _password);
-    await _storage.write(key: 'deepseek_api_key', value: _apiKey);
+  Future<void> loadProfiles() async {
+    _profiles = await _profileService.loadAll();
+    notifyListeners();
+  }
+
+  Future<void> addProfile(ServerProfile profile) async {
+    await _profileService.save(profile);
+    _profiles = await _profileService.loadAll();
+    notifyListeners();
+  }
+
+  Future<void> deleteProfile(String id) async {
+    await _profileService.delete(id);
+    _profiles = await _profileService.loadAll();
+    if (_activeProfile?.id == id) {
+      _activeProfile = null;
+      _lastActiveProfileId = null;
+      await _storage.delete(key: 'last_active_profile');
+    }
+    notifyListeners();
+  }
+
+  Future<void> setAutoConnect(bool value) async {
+    _autoConnect = value;
+    await _storage.write(key: 'auto_connect', value: value ? 'true' : 'false');
+    notifyListeners();
+  }
+
+  Future<void> connectToProfile(ServerProfile profile) async {
+    _activeProfile = profile;
+    _lastActiveProfileId = profile.id;
+    await _storage.write(key: 'last_active_profile', value: profile.id);
+    await _profileService.setLastConnected(profile.id);
+    connect();
   }
 
   void setCredentials({
@@ -79,10 +179,55 @@ class ConnectionProvider extends ChangeNotifier {
     required String password,
     String apiKey = '',
   }) {
-    _host = host;
-    _username = username;
-    _password = password;
-    _apiKey = apiKey;
+    if (_activeProfile == null) {
+      _activeProfile = ServerProfile(
+        id: ServerProfile.generateId(),
+        name: host,
+        host: host,
+        username: username,
+        password: password,
+      );
+      _lastActiveProfileId = _activeProfile!.id;
+    } else {
+      _activeProfile = _activeProfile!.copyWith(
+        host: host,
+        username: username,
+        password: password,
+      );
+    }
+    if (apiKey.isNotEmpty) {
+      _apiKeys[_activeProviderType] = apiKey;
+    }
+  }
+
+  Future<void> setActiveProvider(AIProviderType type) async {
+    _activeProviderType = type;
+    if (type == AIProviderType.custom) {
+      if (_customBaseUrl.isEmpty) _customBaseUrl = 'http://localhost:11434/v1';
+      if (_customModel.isEmpty) _customModel = 'llama3';
+    }
+    await _storage.write(key: 'active_provider', value: type.name);
+    notifyListeners();
+  }
+
+  Future<void> setApiKey(AIProviderType type, String key) async {
+    _apiKeys[type] = key;
+    await _storage.write(key: 'apikey_${type.name}', value: key);
+    notifyListeners();
+  }
+
+  String getApiKey(AIProviderType type) => _apiKeys[type] ?? '';
+
+  Future<void> setCustomBaseUrl(String url) async {
+    _customBaseUrl = url;
+    await _storage.write(key: 'custom_base_url', value: url);
+    notifyListeners();
+  }
+
+  Future<void> setCustomModel(String model) async {
+    _customModel = model;
+    await _storage.write(key: 'custom_model', value: model);
+    notifyListeners();
   }
 
   Future<void> setPermissionLevel(PermissionLevel level) async {
@@ -91,17 +236,28 @@ class ConnectionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> clearApiKey(AIProviderType type) async {
+    _apiKeys.remove(type);
+    await _storage.delete(key: 'apikey_${type.name}');
+    notifyListeners();
+  }
+
   Future<void> connect() async {
+    if (_activeProfile == null) return;
     _state = ConnState.connecting;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      final socket = await SSHSocket.connect(_host, 22, timeout: const Duration(seconds: 10));
+      final socket = await SSHSocket.connect(
+        _activeProfile!.host,
+        _activeProfile!.port,
+        timeout: const Duration(seconds: 10),
+      );
       final client = SSHClient(
         socket,
-        username: _username,
-        onPasswordRequest: () => _password,
+        username: _activeProfile!.username,
+        onPasswordRequest: () => _activeProfile!.password,
       );
 
       await client.authenticated;
@@ -109,7 +265,9 @@ class ConnectionProvider extends ChangeNotifier {
       _client = client;
       _state = ConnState.connected;
       _errorMessage = null;
-      await _saveCredentials();
+      if (_activeProfile != null) {
+        await addProfile(_activeProfile!);
+      }
       notifyListeners();
     } catch (e) {
       _state = ConnState.error;
