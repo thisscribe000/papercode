@@ -6,10 +6,13 @@ import 'providers/theme_provider.dart';
 import 'providers/connection_provider.dart';
 import 'providers/lan_scanner_provider.dart';
 import 'providers/ollama_provider.dart';
+import 'providers/project_provider.dart';
+import 'providers/auth_provider.dart';
 import 'screens/connect_screen.dart';
 import 'screens/chat_screen.dart';
 import 'screens/terminal_screen.dart';
 import 'screens/files_screen.dart';
+import 'screens/editor_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/onboarding_permission_screen.dart';
 import 'widgets/bottom_nav.dart';
@@ -24,6 +27,8 @@ void main() {
         ChangeNotifierProvider(create: (_) => ConnectionProvider()),
         ChangeNotifierProvider(create: (_) => LANScannerProvider()),
         ChangeNotifierProvider(create: (_) => OllamaProvider()),
+        ChangeNotifierProvider(create: (_) => ProjectProvider()),
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
       ],
       child: const PaperCodeApp(),
     ),
@@ -82,7 +87,7 @@ class _PaperCodeAppState extends State<PaperCodeApp> {
           home: _onboardingComplete == true
               ? Consumer<ConnectionProvider>(
                   builder: (context, connection, _) {
-                    return connection.isConnected
+                    return connection.localMode || connection.isConnected
                         ? const MainShell()
                         : const ConnectScreen();
                   },
@@ -147,9 +152,10 @@ class _MainShellState extends State<MainShell> with SingleTickerProviderStateMix
           Expanded(
             child: SafeArea(
               top: false,
-              child: IndexedStack(
+                  child: IndexedStack(
                 index: _currentIndex,
                 children: [
+                  EditorScreen(onOpenChat: _goToChat),
                   const ChatScreen(),
                   const TerminalScreen(),
                   FilesScreen(onOpenChat: _goToChat),

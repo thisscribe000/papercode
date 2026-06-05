@@ -26,6 +26,11 @@ class BottomNav extends StatelessWidget {
       ),
       items: const [
         BottomNavigationBarItem(
+          icon: Icon(Icons.code_outlined),
+          activeIcon: Icon(Icons.code),
+          label: 'Editor',
+        ),
+        BottomNavigationBarItem(
           icon: Icon(Icons.chat_bubble_outline),
           activeIcon: Icon(Icons.chat_bubble),
           label: 'Chat',

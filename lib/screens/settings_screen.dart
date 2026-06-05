@@ -1,12 +1,216 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../providers/theme_provider.dart';
 import '../providers/connection_provider.dart';
 import '../providers/ollama_provider.dart';
+import '../providers/auth_provider.dart';
 import '../models/ai_provider.dart';
 import '../widgets/provider_sheet.dart';
 import 'ollama_screen.dart';
+
+class _GoogleAccountRow extends StatelessWidget {
+  final bool isDark;
+  final ThemeData theme;
+
+  const _GoogleAccountRow({required this.isDark, required this.theme});
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    if (!auth.isSignedIn) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+        child: GestureDetector(
+          onTap: () => auth.signIn(),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              border: Border.all(color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE0E0E0)),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.login, size: 14, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+                const SizedBox(width: 8),
+                Text(
+                  'Sign in with Google to link APIs',
+                  style: GoogleFonts.dmMono(fontSize: 11, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF0A0A0A) : const Color(0xFFFAFAFA),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(radius: 12,
+              backgroundImage: auth.photoUrl != null ? NetworkImage(auth.photoUrl!) : null,
+              child: auth.photoUrl == null ? const Icon(Icons.person, size: 12) : null),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(auth.displayName ?? 'User',
+                    style: GoogleFonts.dmMono(fontSize: 10, fontWeight: FontWeight.w600, color: theme.colorScheme.onSurface)),
+                  Text(auth.email ?? '',
+                    style: GoogleFonts.dmMono(fontSize: 9, color: isDark ? const Color(0xFF555555) : const Color(0xFFAAAAAA))),
+                ],
+              ),
+            ),
+            GestureDetector(
+              onTap: () => auth.signOut(),
+              child: Icon(Icons.logout, size: 14, color: isDark ? const Color(0xFF555555) : const Color(0xFFAAAAAA)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickApiSetupRow extends StatelessWidget {
+  final bool isDark;
+  final ThemeData theme;
+  final ConnectionProvider connectionProvider;
+
+  const _QuickApiSetupRow({required this.isDark, required this.theme, required this.connectionProvider});
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = connectionProvider.activeProvider;
+    if (!provider.requiresApiKey || provider.type == AIProviderType.ollama) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      child: Row(
+        children: [
+          if (provider.keyHelperUrl != null)
+            Expanded(
+              child: GestureDetector(
+                onTap: () => launchUrl(Uri.parse(provider.keyHelperUrl!), mode: LaunchMode.externalApplication),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE0E0E0)),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.open_in_new, size: 10, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Get ${provider.name} Key',
+                        style: GoogleFonts.dmMono(fontSize: 9, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (provider.keyHelperUrl != null) const SizedBox(width: 8),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => _pasteKey(context),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  border: Border.all(color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE0E0E0)),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.content_paste, size: 10, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Paste Key',
+                      style: GoogleFonts.dmMono(fontSize: 9, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _pasteKey(BuildContext context) {
+    final provider = connectionProvider.activeProvider;
+    final keyLabel = provider.apiKeyLabel;
+    final controller = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? const Color(0xFF141414) : const Color(0xFFFFFFFF),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 20, 16, MediaQuery.of(ctx).viewInsets.bottom + 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(keyLabel,
+                style: GoogleFonts.dmMono(fontSize: 13, fontWeight: FontWeight.w600, color: theme.colorScheme.onSurface)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                obscureText: true,
+                autofocus: true,
+                style: GoogleFonts.dmMono(fontSize: 14, color: theme.colorScheme.onSurface),
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: 'Paste your key here...',
+                  hintStyle: GoogleFonts.dmMono(fontSize: 12, color: isDark ? const Color(0xFF555555) : const Color(0xFFAAAAAA)),
+                  border: const UnderlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 38,
+                child: FilledButton(
+                  onPressed: () {
+                    final key = controller.text.trim();
+                    if (key.isNotEmpty) {
+                      connectionProvider.setApiKey(connectionProvider.activeProviderType, key);
+                      Navigator.of(ctx).pop();
+                    }
+                  },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: const Color(0xFF0A0A0A),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                  ),
+                  child: Text('Save Key', style: GoogleFonts.dmMono(fontSize: 12, fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -68,6 +272,8 @@ class SettingsScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               _SectionHeader(label: 'AI', isDark: isDark),
+              _GoogleAccountRow(isDark: isDark, theme: theme),
+              const SizedBox(height: 4),
               _SettingsRow(
                 label: 'AI Provider',
                 value: connectionProvider.activeProvider.name,
@@ -86,6 +292,7 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 ),
               ),
+              _QuickApiSetupRow(isDark: isDark, theme: theme, connectionProvider: connectionProvider),
               if (connectionProvider.activeProvider.requiresApiKey)
                 _SettingsRow(
                   label: connectionProvider.activeProvider.apiKeyLabel,
