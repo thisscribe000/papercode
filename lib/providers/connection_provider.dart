@@ -24,6 +24,7 @@ class ConnectionProvider extends ChangeNotifier {
   String? _activeFileContents;
   PermissionLevel _permissionLevel = PermissionLevel.askMe;
   bool _terminalActive = false;
+  bool _localMode = false;
 
   AIProviderType _activeProviderType = AIProviderType.deepseek;
   final Map<AIProviderType, String> _apiKeys = {};
@@ -52,6 +53,7 @@ class ConnectionProvider extends ChangeNotifier {
   SSHSession? get terminalSession => _terminalSession;
   Terminal? get terminal => _terminal;
   bool get terminalActive => _terminalActive;
+  bool get localMode => _localMode;
   String? get activeFilePath => _activeFilePath;
   String? get activeFileContents => _activeFileContents;
   PermissionLevel get permissionLevel => _permissionLevel;
@@ -372,6 +374,13 @@ class ConnectionProvider extends ChangeNotifier {
   Future<String> _executeCommand(String command) async {
     final result = await _client!.run(command, runInPty: false);
     return utf8.decode(result).trim();
+  }
+
+  void enableLocalMode() {
+    _localMode = true;
+    _state = ConnState.connected;
+    _errorMessage = null;
+    notifyListeners();
   }
 
   Future<void> disconnect() async {
