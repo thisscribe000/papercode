@@ -20,6 +20,14 @@ class GoogleSignInService {
     }
   }
 
+  Future<GoogleSignInAccount?> tryAutoSignIn() async {
+    try {
+      return await _googleSignIn.signInSilently();
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> signOut() async {
     await _googleSignIn.signOut();
   }

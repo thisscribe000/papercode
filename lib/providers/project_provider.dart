@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../sources/code_source.dart';
 import '../sources/local_source.dart';
@@ -59,9 +60,41 @@ class ProjectProvider extends ChangeNotifier {
     await _localSource.setRootToAppDocuments();
     _source = _localSource;
     _currentDirectory = _localSource.rootPath;
+    await _bootstrapSampleFiles();
     _initialized = true;
     await refreshFiles();
     notifyListeners();
+  }
+
+  Future<void> _bootstrapSampleFiles() async {
+    final root = _localSource.rootPath;
+    final marker = File('$root/.papercode_bootstrapped');
+    if (await marker.exists()) return;
+
+    final dirs = ['sample_project', 'sample_project/lib', 'sample_project/web'];
+    for (final d in dirs) {
+      await Directory('$root/$d').create(recursive: true);
+    }
+
+    await File('$root/sample_project/README.md').writeAsString(
+      '# Sample Project\n\nWelcome to PaperCode! Edit this file to test the editor.\n',
+    );
+    await File('$root/sample_project/lib/main.dart').writeAsString(
+      "void main() {\n  print('Hello, PaperCode!');\n}\n",
+    );
+    await File('$root/sample_project/lib/utils.dart').writeAsString(
+      "String greet(String name) => 'Hello, \$name!';\n\nint add(int a, int b) => a + b;\n",
+    );
+    await File('$root/sample_project/web/index.html').writeAsString(
+      '<!DOCTYPE html>\n<html>\n<head>\n  <title>PaperCode</title>\n</head>\n<body>\n  <h1>Hello from PaperCode!</h1>\n</body>\n</html>\n',
+    );
+    await File('$root/sample_project/web/style.css').writeAsString(
+      'body {\n  font-family: sans-serif;\n  background: #0a0a0a;\n  color: #e8e8e0;\n}\n',
+    );
+    await File('$root/sample_project/web/app.js').writeAsString(
+      "console.log('PaperCode is running!');\n",
+    );
+    await marker.writeAsString('1');
   }
 
   void setSource(CodeSource source) {

@@ -100,17 +100,80 @@ class GitHubSource extends CodeSource {
 
   @override
   Future<void> writeFile(String path, String content) async {
-    throw UnimplementedError('Writing via GitHub API not yet supported');
+    if (_token == null || _token!.isEmpty) {
+      throw Exception('Authentication token required to write to GitHub');
+    }
+
+    final url = 'https://api.github.com/repos/$_owner/$_repo/contents/$path';
+    final encoded = base64Encode(utf8.encode(content));
+
+    String? sha;
+    try {
+      sha = await _getFileSha(path);
+    } catch (_) {
+      // File doesn't exist yet — creating new
+    }
+
+    final body = {
+      'message': 'Update $path via PaperCode',
+      'content': encoded,
+      'branch': _branch,
+    };
+    if (sha != null) {
+      body['sha'] = sha;
+    }
+
+    final response = await http.put(
+      Uri.parse(url),
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception('GitHub write error: ${response.statusCode} ${response.body}');
+    }
   }
 
   @override
   Future<void> deleteFile(String path) async {
-    throw UnimplementedError('Deleting via GitHub API not yet supported');
+    if (_token == null || _token!.isEmpty) {
+      throw Exception('Authentication token required to delete from GitHub');
+    }
+
+    final sha = await _getFileSha(path);
+    final url = 'https://api.github.com/repos/$_owner/$_repo/contents/$path';
+
+    final body = {
+      'message': 'Delete $path via PaperCode',
+      'sha': sha,
+      'branch': _branch,
+    };
+
+    final response = await http.delete(
+      Uri.parse(url),
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('GitHub delete error: ${response.statusCode} ${response.body}');
+    }
   }
 
   @override
   Future<void> createDirectory(String path) async {
-    throw UnimplementedError('Create directory via GitHub API not yet supported');
+    // GitHub doesn't have empty directories in its content model.
+    // Directories are implicitly created when a file is added at a path.
+  }
+
+  Future<String> _getFileSha(String path) async {
+    final url = 'https://api.github.com/repos/$_owner/$_repo/contents/$path?ref=$_branch';
+    final response = await http.get(Uri.parse(url), headers: _headers);
+    if (response.statusCode != 200) {
+      throw Exception('File not found: $path');
+    }
+    final data = jsonDecode(response.body);
+    return data['sha'] as String;
   }
 
   @override

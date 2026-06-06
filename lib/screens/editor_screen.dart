@@ -52,11 +52,35 @@ class _EditorScreenState extends State<EditorScreen> {
             hasRemoteSource: hasRemoteSource,
             onToggleTree: () => setState(() => _showTree = !_showTree),
             onToggleAi: () => setState(() => _showAi = !_showAi),
-            onSourceChanged: (type) => _handleSourceChange(context, project, connection, type),
+            onSourceChanged: (type) =>
+                _handleSourceChange(context, project, connection, type),
           ),
           Expanded(
             child: project.source == null
-                ? _NoSourceState(isDark: isDark, hasRemoteSource: hasRemoteSource)
+                ? _WorkspaceEmptyState(
+                    isDark: isDark,
+                    sourceLabel: 'No source',
+                    currentDirectory: '',
+                    hasRemoteSource: hasRemoteSource,
+                    onOpenLocal: () => _handleSourceChange(
+                      context,
+                      project,
+                      connection,
+                      SourceType.local,
+                    ),
+                    onConnectSsh: () => _handleSourceChange(
+                      context,
+                      project,
+                      connection,
+                      SourceType.ssh,
+                    ),
+                    onOpenGithub: () => _handleSourceChange(
+                      context,
+                      project,
+                      connection,
+                      SourceType.github,
+                    ),
+                  )
                 : Column(
                     children: [
                       Expanded(
@@ -65,11 +89,20 @@ class _EditorScreenState extends State<EditorScreen> {
                             if (_showTree)
                               SizedBox(
                                 width: MediaQuery.of(context).size.width * 0.35,
-                                child: _buildSidePanel(context, isDark, project),
+                                child: _buildSidePanel(
+                                  context,
+                                  isDark,
+                                  project,
+                                ),
                               ),
                             const VerticalDivider(width: 1),
                             Expanded(
-                              child: _buildEditorPanel(context, isDark, project),
+                              child: _buildEditorPanel(
+                                context,
+                                isDark,
+                                project,
+                                connection,
+                              ),
                             ),
                           ],
                         ),
@@ -87,41 +120,44 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
-  Widget _buildSidePanel(BuildContext context, bool isDark, ProjectProvider project) {
+  Widget _buildSidePanel(
+    BuildContext context,
+    bool isDark,
+    ProjectProvider project,
+  ) {
     return Column(
       children: [
         _SourceBadge(sourceType: project.sourceType, isDark: isDark),
         const Divider(height: 1),
-        Expanded(
-          child: ClipRect(child: FileTreeWidget()),
-        ),
+        Expanded(child: ClipRect(child: FileTreeWidget())),
       ],
     );
   }
 
-  Widget _buildEditorPanel(BuildContext context, bool isDark, ProjectProvider project) {
+  Widget _buildEditorPanel(
+    BuildContext context,
+    bool isDark,
+    ProjectProvider project,
+    ConnectionProvider connection,
+  ) {
     final activeTab = project.activeTab;
     final openTabs = project.openTabs;
 
     if (openTabs.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.code,
-              size: 48,
-              color: isDark ? const Color(0xFF333333) : const Color(0xFFDDDDDD),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Select a file to edit',
-              style: GoogleFonts.dmMono(
-                fontSize: 13,
-                color: isDark ? const Color(0xFF555555) : const Color(0xFFAAAAAA),
-              ),
-            ),
-          ],
+      return _WorkspaceEmptyState(
+        isDark: isDark,
+        sourceLabel: project.sourceLabel,
+        currentDirectory: project.currentDirectory,
+        hasRemoteSource: connection.isConnected,
+        onOpenLocal: () =>
+            _handleSourceChange(context, project, connection, SourceType.local),
+        onConnectSsh: () =>
+            _handleSourceChange(context, project, connection, SourceType.ssh),
+        onOpenGithub: () => _handleSourceChange(
+          context,
+          project,
+          connection,
+          SourceType.github,
         ),
       );
     }
@@ -140,10 +176,10 @@ class _EditorScreenState extends State<EditorScreen> {
         Expanded(
           child: activeTab != null
               ? CodeEditorWidget(
-                  key: ValueKey(activeTab.path + activeTab.content.length.toString()),
+                  key: ValueKey(activeTab.path),
                   content: activeTab.content,
                   language: _languageFromPath(activeTab.path),
-                  editable: project.sourceType != SourceType.github,
+                  editable: true,
                   onChanged: (val) {
                     final idx = project.activeTabIndex;
                     if (idx >= 0) {
@@ -175,14 +211,13 @@ class _EditorScreenState extends State<EditorScreen> {
         project.setLocalSource();
       case SourceType.ssh:
         if (connection.isConnected && connection.client != null) {
-          project.setSSHSource(SSHSource(
-            connection.client!,
-            host: connection.host,
-          ));
-        } else {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const ServerListScreen()),
+          project.setSSHSource(
+            SSHSource(connection.client!, host: connection.host),
           );
+        } else {
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const ServerListScreen()));
         }
       case SourceType.github:
         _showGitHubDialog(context, project);
@@ -201,13 +236,20 @@ class _EditorScreenState extends State<EditorScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: isDark ? const Color(0xFF141414) : const Color(0xFFFFFFFF),
+      backgroundColor: isDark
+          ? const Color(0xFF141414)
+          : const Color(0xFFFFFFFF),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
       ),
       builder: (ctx) {
         return Padding(
-          padding: EdgeInsets.fromLTRB(16, 20, 16, MediaQuery.of(ctx).viewInsets.bottom + 16),
+          padding: EdgeInsets.fromLTRB(
+            16,
+            20,
+            16,
+            MediaQuery.of(ctx).viewInsets.bottom + 16,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -223,22 +265,38 @@ class _EditorScreenState extends State<EditorScreen> {
               const SizedBox(height: 16),
               TextField(
                 controller: ownerController,
-                style: GoogleFonts.dmMono(fontSize: 13, color: theme.colorScheme.onSurface),
+                style: GoogleFonts.dmMono(
+                  fontSize: 13,
+                  color: theme.colorScheme.onSurface,
+                ),
                 decoration: InputDecoration(
                   isDense: true,
                   hintText: 'Owner (e.g. flutter)',
-                  hintStyle: GoogleFonts.dmMono(fontSize: 12, color: isDark ? const Color(0xFF555555) : const Color(0xFFAAAAAA)),
+                  hintStyle: GoogleFonts.dmMono(
+                    fontSize: 12,
+                    color: isDark
+                        ? const Color(0xFF555555)
+                        : const Color(0xFFAAAAAA),
+                  ),
                   border: const UnderlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: repoController,
-                style: GoogleFonts.dmMono(fontSize: 13, color: theme.colorScheme.onSurface),
+                style: GoogleFonts.dmMono(
+                  fontSize: 13,
+                  color: theme.colorScheme.onSurface,
+                ),
                 decoration: InputDecoration(
                   isDense: true,
                   hintText: 'Repository (e.g. flutter)',
-                  hintStyle: GoogleFonts.dmMono(fontSize: 12, color: isDark ? const Color(0xFF555555) : const Color(0xFFAAAAAA)),
+                  hintStyle: GoogleFonts.dmMono(
+                    fontSize: 12,
+                    color: isDark
+                        ? const Color(0xFF555555)
+                        : const Color(0xFFAAAAAA),
+                  ),
                   border: const UnderlineInputBorder(),
                 ),
               ),
@@ -246,11 +304,19 @@ class _EditorScreenState extends State<EditorScreen> {
               TextField(
                 controller: tokenController,
                 obscureText: true,
-                style: GoogleFonts.dmMono(fontSize: 13, color: theme.colorScheme.onSurface),
+                style: GoogleFonts.dmMono(
+                  fontSize: 13,
+                  color: theme.colorScheme.onSurface,
+                ),
                 decoration: InputDecoration(
                   isDense: true,
-                  hintText: 'Token (optional, for private repos)',
-                  hintStyle: GoogleFonts.dmMono(fontSize: 12, color: isDark ? const Color(0xFF555555) : const Color(0xFFAAAAAA)),
+                  hintText: 'Token (required for write support)',
+                  hintStyle: GoogleFonts.dmMono(
+                    fontSize: 12,
+                    color: isDark
+                        ? const Color(0xFF555555)
+                        : const Color(0xFFAAAAAA),
+                  ),
                   border: const UnderlineInputBorder(),
                 ),
               ),
@@ -265,7 +331,9 @@ class _EditorScreenState extends State<EditorScreen> {
                       project.setGitHubSource(
                         owner: owner,
                         repo: repo,
-                        token: tokenController.text.trim().isNotEmpty ? tokenController.text.trim() : null,
+                        token: tokenController.text.trim().isNotEmpty
+                            ? tokenController.text.trim()
+                            : null,
                       );
                       Navigator.of(ctx).pop();
                     }
@@ -273,11 +341,16 @@ class _EditorScreenState extends State<EditorScreen> {
                   style: FilledButton.styleFrom(
                     backgroundColor: theme.colorScheme.primary,
                     foregroundColor: const Color(0xFF0A0A0A),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
                   ),
                   child: Text(
                     'Open Repository',
-                    style: GoogleFonts.dmMono(fontSize: 12, fontWeight: FontWeight.w600),
+                    style: GoogleFonts.dmMono(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
@@ -288,7 +361,11 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
-  Future<void> _confirmClose(BuildContext context, ProjectProvider project, int index) async {
+  Future<void> _confirmClose(
+    BuildContext context,
+    ProjectProvider project,
+    int index,
+  ) async {
     final tab = project.openTabs[index];
     if (tab.hasUnsavedChanges) {
       final theme = Theme.of(context);
@@ -296,14 +373,22 @@ class _EditorScreenState extends State<EditorScreen> {
       final result = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
-          backgroundColor: isDark ? const Color(0xFF141414) : const Color(0xFFFFFFFF),
+          backgroundColor: isDark
+              ? const Color(0xFF141414)
+              : const Color(0xFFFFFFFF),
           title: Text(
             'Unsaved Changes',
-            style: GoogleFonts.dmMono(fontSize: 13, color: theme.colorScheme.onSurface),
+            style: GoogleFonts.dmMono(
+              fontSize: 13,
+              color: theme.colorScheme.onSurface,
+            ),
           ),
           content: Text(
             'Save changes to ${tab.name}?',
-            style: GoogleFonts.dmMono(fontSize: 11, color: isDark ? const Color(0xFF666666) : const Color(0xFF999999)),
+            style: GoogleFonts.dmMono(
+              fontSize: 11,
+              color: isDark ? const Color(0xFF666666) : const Color(0xFF999999),
+            ),
           ),
           actions: [
             TextButton(
@@ -312,7 +397,13 @@ class _EditorScreenState extends State<EditorScreen> {
             ),
             TextButton(
               onPressed: () => Navigator.of(ctx).pop('discard'),
-              child: Text('Discard', style: GoogleFonts.dmMono(fontSize: 11, color: Colors.redAccent)),
+              child: Text(
+                'Discard',
+                style: GoogleFonts.dmMono(
+                  fontSize: 11,
+                  color: Colors.redAccent,
+                ),
+              ),
             ),
             TextButton(
               onPressed: () => Navigator.of(ctx).pop('save'),
@@ -335,35 +426,57 @@ class _EditorScreenState extends State<EditorScreen> {
   String _languageFromPath(String path) {
     final ext = path.split('.').last.toLowerCase();
     switch (ext) {
-      case 'dart': return 'dart';
-      case 'py': return 'python';
+      case 'dart':
+        return 'dart';
+      case 'py':
+        return 'python';
       case 'js':
-      case 'jsx': return 'javascript';
+      case 'jsx':
+        return 'javascript';
       case 'ts':
-      case 'tsx': return 'typescript';
-      case 'java': return 'java';
-      case 'kt': return 'kotlin';
-      case 'swift': return 'swift';
-      case 'go': return 'go';
-      case 'rs': return 'rust';
-      case 'rb': return 'ruby';
-      case 'php': return 'php';
+      case 'tsx':
+        return 'typescript';
+      case 'java':
+        return 'java';
+      case 'kt':
+        return 'kotlin';
+      case 'swift':
+        return 'swift';
+      case 'go':
+        return 'go';
+      case 'rs':
+        return 'rust';
+      case 'rb':
+        return 'ruby';
+      case 'php':
+        return 'php';
       case 'c':
       case 'cpp':
       case 'h':
-      case 'hpp': return 'cpp';
-      case 'cs': return 'csharp';
-      case 'html': return 'html';
-      case 'css': return 'css';
-      case 'json': return 'json';
+      case 'hpp':
+        return 'cpp';
+      case 'cs':
+        return 'csharp';
+      case 'html':
+        return 'html';
+      case 'css':
+        return 'css';
+      case 'json':
+        return 'json';
       case 'yaml':
-      case 'yml': return 'yaml';
-      case 'md': return 'markdown';
-      case 'xml': return 'xml';
+      case 'yml':
+        return 'yaml';
+      case 'md':
+        return 'markdown';
+      case 'xml':
+        return 'xml';
       case 'sh':
-      case 'bash': return 'bash';
-      case 'sql': return 'sql';
-      default: return 'dart';
+      case 'bash':
+        return 'bash';
+      case 'sql':
+        return 'sql';
+      default:
+        return 'dart';
     }
   }
 }
@@ -418,40 +531,53 @@ class _TopBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          GestureDetector(
-            onTap: () => _showSourcePicker(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE0E0E0),
+          Flexible(
+            child: GestureDetector(
+              onTap: () => _showSourcePicker(context),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: isDark
+                        ? const Color(0xFF2A2A2A)
+                        : const Color(0xFFE0E0E0),
+                  ),
+                  borderRadius: BorderRadius.circular(3),
                 ),
-                borderRadius: BorderRadius.circular(3),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    _iconForSource(sourceType),
-                    size: 12,
-                    color: isDark ? const Color(0xFF888888) : const Color(0xFF666666),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    sourceLabel,
-                    style: GoogleFonts.dmMono(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? const Color(0xFFCCCCCC) : const Color(0xFF333333),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _iconForSource(sourceType),
+                      size: 12,
+                      color: isDark
+                          ? const Color(0xFF888888)
+                          : const Color(0xFF666666),
                     ),
-                  ),
-                  const SizedBox(width: 2),
-                  Icon(
-                    Icons.arrow_drop_down,
-                    size: 14,
-                    color: isDark ? const Color(0xFF666666) : const Color(0xFF999999),
-                  ),
-                ],
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        sourceLabel,
+                        style: GoogleFonts.dmMono(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: isDark
+                              ? const Color(0xFFCCCCCC)
+                              : const Color(0xFF333333),
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    Icon(
+                      Icons.arrow_drop_down,
+                      size: 14,
+                      color: isDark
+                          ? const Color(0xFF666666)
+                          : const Color(0xFF999999),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -470,7 +596,11 @@ class _TopBar extends StatelessWidget {
                   Icon(
                     Icons.auto_awesome,
                     size: 13,
-                    color: showAi ? accent : (isDark ? const Color(0xFF666666) : const Color(0xFF999999)),
+                    color: showAi
+                        ? accent
+                        : (isDark
+                              ? const Color(0xFF666666)
+                              : const Color(0xFF999999)),
                   ),
                   const SizedBox(width: 3),
                   Text(
@@ -478,7 +608,11 @@ class _TopBar extends StatelessWidget {
                     style: GoogleFonts.dmMono(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: showAi ? accent : (isDark ? const Color(0xFF666666) : const Color(0xFF999999)),
+                      color: showAi
+                          ? accent
+                          : (isDark
+                                ? const Color(0xFF666666)
+                                : const Color(0xFF999999)),
                     ),
                   ),
                 ],
@@ -492,17 +626,23 @@ class _TopBar extends StatelessWidget {
 
   IconData _iconForSource(SourceType? type) {
     switch (type) {
-      case SourceType.local: return Icons.phone_android_outlined;
-      case SourceType.ssh: return Icons.dns_outlined;
-      case SourceType.github: return Icons.code;
-      default: return Icons.folder_outlined;
+      case SourceType.local:
+        return Icons.phone_android_outlined;
+      case SourceType.ssh:
+        return Icons.dns_outlined;
+      case SourceType.github:
+        return Icons.code;
+      default:
+        return Icons.folder_outlined;
     }
   }
 
   void _showSourcePicker(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: isDark ? const Color(0xFF141414) : const Color(0xFFFFFFFF),
+      backgroundColor: isDark
+          ? const Color(0xFF141414)
+          : const Color(0xFFFFFFFF),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
       ),
@@ -523,9 +663,27 @@ class _TopBar extends StatelessWidget {
                   ),
                 ),
               ),
-              _sourceOption(ctx, Icons.phone_android_outlined, 'Local Storage', SourceType.local, 'Files on this device'),
-              _sourceOption(ctx, Icons.dns_outlined, 'SSH Server', SourceType.ssh, hasRemoteSource ? 'Connected server' : 'Connect to a server'),
-              _sourceOption(ctx, Icons.code, 'GitHub', SourceType.github, 'Browse a repository'),
+              _sourceOption(
+                ctx,
+                Icons.phone_android_outlined,
+                'Local Storage',
+                SourceType.local,
+                'Files on this device',
+              ),
+              _sourceOption(
+                ctx,
+                Icons.dns_outlined,
+                'SSH Server',
+                SourceType.ssh,
+                hasRemoteSource ? 'Connected server' : 'Connect to a server',
+              ),
+              _sourceOption(
+                ctx,
+                Icons.code,
+                'GitHub',
+                SourceType.github,
+                'Browse a repository',
+              ),
             ],
           ),
         ),
@@ -533,7 +691,13 @@ class _TopBar extends StatelessWidget {
     );
   }
 
-  Widget _sourceOption(BuildContext ctx, IconData icon, String label, SourceType type, String subtitle) {
+  Widget _sourceOption(
+    BuildContext ctx,
+    IconData icon,
+    String label,
+    SourceType type,
+    String subtitle,
+  ) {
     final isActive = sourceType == type;
     final theme = Theme.of(ctx);
     final isDark = theme.brightness == Brightness.dark;
@@ -544,7 +708,9 @@ class _TopBar extends StatelessWidget {
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        color: isActive ? theme.colorScheme.primary.withValues(alpha: 0.1) : null,
+        color: isActive
+            ? theme.colorScheme.primary.withValues(alpha: 0.1)
+            : null,
         child: Row(
           children: [
             Icon(icon, size: 18, color: theme.colorScheme.onSurface),
@@ -565,7 +731,9 @@ class _TopBar extends StatelessWidget {
                     subtitle,
                     style: GoogleFonts.dmMono(
                       fontSize: 10,
-                      color: isDark ? const Color(0xFF555555) : const Color(0xFFAAAAAA),
+                      color: isDark
+                          ? const Color(0xFF555555)
+                          : const Color(0xFFAAAAAA),
                     ),
                   ),
                 ],
@@ -612,19 +780,27 @@ class _SourceBadge extends StatelessWidget {
 
   IconData _icon() {
     switch (sourceType) {
-      case SourceType.local: return Icons.phone_android_outlined;
-      case SourceType.ssh: return Icons.dns_outlined;
-      case SourceType.github: return Icons.code;
-      default: return Icons.folder_outlined;
+      case SourceType.local:
+        return Icons.phone_android_outlined;
+      case SourceType.ssh:
+        return Icons.dns_outlined;
+      case SourceType.github:
+        return Icons.code;
+      default:
+        return Icons.folder_outlined;
     }
   }
 
   String _label() {
     switch (sourceType) {
-      case SourceType.local: return 'LOCAL';
-      case SourceType.ssh: return 'SSH';
-      case SourceType.github: return 'GITHUB';
-      default: return '';
+      case SourceType.local:
+        return 'LOCAL';
+      case SourceType.ssh:
+        return 'SSH';
+      case SourceType.github:
+        return 'GITHUB';
+      default:
+        return '';
     }
   }
 }
@@ -664,11 +840,15 @@ class _TabBar extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 8),
               decoration: BoxDecoration(
                 color: isActive
-                    ? (isDark ? const Color(0xFF141414) : const Color(0xFFFFFFFF))
+                    ? (isDark
+                          ? const Color(0xFF141414)
+                          : const Color(0xFFFFFFFF))
                     : null,
                 border: Border(
                   right: BorderSide(
-                    color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE0E0E0),
+                    color: isDark
+                        ? const Color(0xFF2A2A2A)
+                        : const Color(0xFFE0E0E0),
                     width: 0.5,
                   ),
                 ),
@@ -681,7 +861,9 @@ class _TabBar extends StatelessWidget {
                     size: 11,
                     color: isActive
                         ? Theme.of(context).colorScheme.primary
-                        : (isDark ? const Color(0xFF555555) : const Color(0xFFAAAAAA)),
+                        : (isDark
+                              ? const Color(0xFF555555)
+                              : const Color(0xFFAAAAAA)),
                   ),
                   const SizedBox(width: 4),
                   Flexible(
@@ -690,8 +872,12 @@ class _TabBar extends StatelessWidget {
                       style: GoogleFonts.dmMono(
                         fontSize: 10,
                         color: isActive
-                            ? (isDark ? const Color(0xFFCCCCCC) : const Color(0xFF333333))
-                            : (isDark ? const Color(0xFF555555) : const Color(0xFFAAAAAA)),
+                            ? (isDark
+                                  ? const Color(0xFFCCCCCC)
+                                  : const Color(0xFF333333))
+                            : (isDark
+                                  ? const Color(0xFF555555)
+                                  : const Color(0xFFAAAAAA)),
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -714,7 +900,9 @@ class _TabBar extends StatelessWidget {
                     child: Icon(
                       Icons.close,
                       size: 12,
-                      color: isDark ? const Color(0xFF555555) : const Color(0xFFAAAAAA),
+                      color: isDark
+                          ? const Color(0xFF555555)
+                          : const Color(0xFFAAAAAA),
                     ),
                   ),
                 ],
@@ -773,11 +961,16 @@ class _StatusBar extends StatelessWidget {
               ),
             ),
           const SizedBox(width: 8),
-          Text(
-            path.split('/').last,
-            style: GoogleFonts.dmMono(
-              fontSize: 9,
-              color: isDark ? const Color(0xFF555555) : const Color(0xFFAAAAAA),
+          Flexible(
+            child: Text(
+              path.split('/').last,
+              style: GoogleFonts.dmMono(
+                fontSize: 9,
+                color: isDark
+                    ? const Color(0xFF555555)
+                    : const Color(0xFFAAAAAA),
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
@@ -786,40 +979,212 @@ class _StatusBar extends StatelessWidget {
   }
 }
 
-class _NoSourceState extends StatelessWidget {
+class _WorkspaceEmptyState extends StatelessWidget {
   final bool isDark;
+  final String sourceLabel;
+  final String currentDirectory;
   final bool hasRemoteSource;
+  final VoidCallback onOpenLocal;
+  final VoidCallback onConnectSsh;
+  final VoidCallback onOpenGithub;
 
-  const _NoSourceState({required this.isDark, required this.hasRemoteSource});
+  const _WorkspaceEmptyState({
+    required this.isDark,
+    required this.sourceLabel,
+    required this.currentDirectory,
+    required this.hasRemoteSource,
+    required this.onOpenLocal,
+    required this.onConnectSsh,
+    required this.onOpenGithub,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = isDark ? const Color(0xFF555555) : const Color(0xFFAAAAAA);
+    final quiet = isDark ? const Color(0xFF444444) : const Color(0xFFBBBBBB);
+    final directory = currentDirectory.isEmpty
+        ? 'Choose a source'
+        : currentDirectory;
+
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.folder_open_outlined,
-            size: 48,
-            color: isDark ? const Color(0xFF333333) : const Color(0xFFDDDDDD),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.dashboard_customize_outlined,
+                size: 42,
+                color: isDark
+                    ? const Color(0xFF333333)
+                    : const Color(0xFFDDDDDD),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Workspace',
+                style: GoogleFonts.dmMono(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Open a file from the project tree or switch sources below.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.dmMono(
+                  fontSize: 11,
+                  height: 1.35,
+                  color: muted,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? const Color(0xFF141414)
+                      : const Color(0xFFFFFFFF),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: isDark
+                        ? const Color(0xFF2A2A2A)
+                        : const Color(0xFFE0E0E0),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      sourceLabel,
+                      style: GoogleFonts.dmMono(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      directory,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.dmMono(fontSize: 10, color: quiet),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _WorkspaceAction(
+                icon: Icons.phone_android_outlined,
+                label: 'Open Local',
+                caption: 'Files on this device',
+                isDark: isDark,
+                onTap: onOpenLocal,
+              ),
+              _WorkspaceAction(
+                icon: Icons.dns_outlined,
+                label: hasRemoteSource ? 'Use SSH Server' : 'Connect SSH',
+                caption: hasRemoteSource
+                    ? 'Open the connected server'
+                    : 'Add or choose a server profile',
+                isDark: isDark,
+                onTap: onConnectSsh,
+              ),
+              _WorkspaceAction(
+                icon: Icons.code,
+                label: 'Open GitHub',
+                caption: 'Browse a repository',
+                isDark: isDark,
+                onTap: onOpenGithub,
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          Text(
-            'Choose a code source to begin',
-            style: GoogleFonts.dmMono(
-              fontSize: 13,
-              color: isDark ? const Color(0xFF555555) : const Color(0xFFAAAAAA),
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String caption;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  const _WorkspaceAction({
+    required this.icon,
+    required this.label,
+    required this.caption,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE0E0E0),
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Local · SSH · GitHub',
-            style: GoogleFonts.dmMono(
-              fontSize: 11,
-              color: isDark ? const Color(0xFF444444) : const Color(0xFFBBBBBB),
-            ),
+          child: Row(
+            children: [
+              Icon(icon, size: 16, color: theme.colorScheme.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: GoogleFonts.dmMono(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      caption,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.dmMono(
+                        fontSize: 9,
+                        color: isDark
+                            ? const Color(0xFF555555)
+                            : const Color(0xFFAAAAAA),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right,
+                size: 15,
+                color: isDark
+                    ? const Color(0xFF555555)
+                    : const Color(0xFFAAAAAA),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

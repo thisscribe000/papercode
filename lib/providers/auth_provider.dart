@@ -14,6 +14,13 @@ class AuthProvider extends ChangeNotifier {
   String? get email => _user?.email;
   String? get photoUrl => _user?.photoUrl;
 
+  Future<void> init() async {
+    try {
+      _user = await _service.tryAutoSignIn();
+    } catch (_) {}
+    notifyListeners();
+  }
+
   Future<GoogleSignInAccount?> signIn() async {
     _loading = true;
     notifyListeners();

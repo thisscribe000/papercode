@@ -11,7 +11,6 @@ import 'providers/auth_provider.dart';
 import 'screens/connect_screen.dart';
 import 'screens/chat_screen.dart';
 import 'screens/terminal_screen.dart';
-import 'screens/files_screen.dart';
 import 'screens/editor_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/onboarding_permission_screen.dart';
@@ -28,7 +27,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => LANScannerProvider()),
         ChangeNotifierProvider(create: (_) => OllamaProvider()),
         ChangeNotifierProvider(create: (_) => ProjectProvider()),
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => AuthProvider()..init()),
       ],
       child: const PaperCodeApp(),
     ),
@@ -69,9 +68,7 @@ class _PaperCodeAppState extends State<PaperCodeApp> {
       return MaterialApp(
         debugShowCheckedModeBanner: false,
         theme: AppTheme.dark(const Color(0xFFE8FF00), 1.0),
-        home: const Scaffold(
-          body: Center(child: CircularProgressIndicator()),
-        ),
+        home: const Scaffold(body: Center(child: CircularProgressIndicator())),
       );
     }
 
@@ -81,9 +78,17 @@ class _PaperCodeAppState extends State<PaperCodeApp> {
           title: 'PaperCode',
           debugShowCheckedModeBanner: false,
           navigatorKey: _navigatorKey,
-          theme: AppTheme.light(themeProvider.accentColor, themeProvider.fontSizeScale),
-          darkTheme: AppTheme.dark(themeProvider.accentColor, themeProvider.fontSizeScale),
-          themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+          theme: AppTheme.light(
+            themeProvider.accentColor,
+            themeProvider.fontSizeScale,
+          ),
+          darkTheme: AppTheme.dark(
+            themeProvider.accentColor,
+            themeProvider.fontSizeScale,
+          ),
+          themeMode: themeProvider.isDarkMode
+              ? ThemeMode.dark
+              : ThemeMode.light,
           home: _onboardingComplete == true
               ? Consumer<ConnectionProvider>(
                   builder: (context, connection, _) {
@@ -106,18 +111,22 @@ class MainShell extends StatefulWidget {
   State<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> with SingleTickerProviderStateMixin {
+class _MainShellState extends State<MainShell>
+    with SingleTickerProviderStateMixin {
   int _currentIndex = 0;
 
   void _goToChat() {
-    setState(() => _currentIndex = 0);
+    setState(() => _currentIndex = 1);
   }
 
   void _showSnackbar(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message, style: const TextStyle(fontFamily: 'DM Mono', fontSize: 12)),
+        content: Text(
+          message,
+          style: const TextStyle(fontFamily: 'DM Mono', fontSize: 12),
+        ),
         backgroundColor: const Color(0xFFFF4444),
         duration: const Duration(seconds: 3),
         behavior: SnackBarBehavior.floating,
@@ -139,26 +148,24 @@ class _MainShellState extends State<MainShell> with SingleTickerProviderStateMix
       body: Column(
         children: [
           Consumer<ConnectionProvider>(
-            builder: (context, conn, _) =>
-                conn.isConnecting
-                    ? LinearProgressIndicator(
-                        backgroundColor: Colors.transparent,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          Theme.of(context).colorScheme.primary,
-                        ),
-                      )
-                    : const SizedBox(height: 0),
+            builder: (context, conn, _) => conn.isConnecting
+                ? LinearProgressIndicator(
+                    backgroundColor: Colors.transparent,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Theme.of(context).colorScheme.primary,
+                    ),
+                  )
+                : const SizedBox(height: 0),
           ),
           Expanded(
             child: SafeArea(
               top: false,
-                  child: IndexedStack(
+              child: IndexedStack(
                 index: _currentIndex,
                 children: [
                   EditorScreen(onOpenChat: _goToChat),
                   const ChatScreen(),
                   const TerminalScreen(),
-                  FilesScreen(onOpenChat: _goToChat),
                   const SettingsScreen(),
                 ],
               ),

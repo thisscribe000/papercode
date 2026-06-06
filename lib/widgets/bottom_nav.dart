@@ -5,11 +5,7 @@ class BottomNav extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
 
-  const BottomNav({
-    super.key,
-    required this.currentIndex,
-    required this.onTap,
-  });
+  const BottomNav({super.key, required this.currentIndex, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -21,14 +17,12 @@ class BottomNav extends StatelessWidget {
         fontSize: 11,
         fontWeight: FontWeight.w500,
       ),
-      unselectedLabelStyle: GoogleFonts.dmMono(
-        fontSize: 11,
-      ),
+      unselectedLabelStyle: GoogleFonts.dmMono(fontSize: 11),
       items: const [
         BottomNavigationBarItem(
           icon: Icon(Icons.code_outlined),
           activeIcon: Icon(Icons.code),
-          label: 'Editor',
+          label: 'Workspace',
         ),
         BottomNavigationBarItem(
           icon: Icon(Icons.chat_bubble_outline),
@@ -39,11 +33,6 @@ class BottomNav extends StatelessWidget {
           icon: Icon(Icons.terminal_outlined),
           activeIcon: Icon(Icons.terminal),
           label: 'Terminal',
-        ),
-        BottomNavigationBarItem(
-          icon: Icon(Icons.folder_outlined),
-          activeIcon: Icon(Icons.folder),
-          label: 'Files',
         ),
         BottomNavigationBarItem(
           icon: Icon(Icons.settings_outlined),
