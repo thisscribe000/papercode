@@ -4,8 +4,8 @@ A Next.js 14 (App Router) client portal with Supabase authentication and asset m
 
 ## Tech Stack
 - **Framework:** Next.js 14, App Router
-- **Auth:** Supabase magic-link email auth (`@supabase/ssr` + `@supabase/supabase-js`)
-- **Styling:** Tailwind CSS
+- **Auth:** Supabase email/password + magic-link (`@supabase/ssr` + `@supabase/supabase-js`)
+- **Styling:** Tailwind CSS (dark gradient login, light dashboard/admin)
 - **Database:** Supabase PostgreSQL (projects, project_members, assets tables with RLS)
 - **Storage:** Supabase Storage bucket `assets`
 
@@ -18,14 +18,14 @@ A Next.js 14 (App Router) client portal with Supabase authentication and asset m
 ## Pages
 | Route | Auth | Description |
 |---|---|---|
-| `/login` | Public | Email input, sends magic link, shows "check your email" state |
-| `/dashboard` | Protected | Assets grouped by project, cards with title/image/date |
-| `/admin` | Protected (admin) | Create projects, add clients, upload assets |
-| `/auth/callback` | Public | Exchanges magic link code for session |
+| `/login` | Public | Email + password login (default), toggleable to magic link |
+| `/dashboard` | Protected | Assets grouped by project, cards with title/image/date. Admin users see an "Admin" link in the header |
+| `/admin` | Protected (admin) | Create projects, add clients, upload assets. Only visible if user has `is_admin = true` in `project_members` |
+| `/auth/callback` | Public | Exchanges magic link code for session, sets cookies, redirects to `/dashboard` |
 
-## Database Tables (assumed existing)
+## Database Tables (actual schema)
 - `projects` — `id`, `name`, `status`, `created_at`
-- `project_members` — `id`, `user_id`, `project_id`, `role`, `is_admin`
+- `project_members` — `user_id`, `project_id`, `is_admin` (composite primary key, no `id` column)
 - `assets` — `id`, `title`, `file_url`, `project_id`, `created_at`
 - `profiles` — `id`, `email` (used for email → user_id lookup in admin)
 
@@ -33,6 +33,12 @@ A Next.js 14 (App Router) client portal with Supabase authentication and asset m
 - Users can read assets for projects they belong to
 - Admins can insert projects, project_members, and assets
 - Storage bucket `assets` allows authenticated uploads
+
+## Supabase Setup Notes
+- Auth callback URL must be whitelisted: `http://localhost:3000/auth/callback`
+- To make a user admin, insert into `project_members` with `is_admin = true`
+- `project_members` has no `role` column — only `user_id`, `project_id`, `is_admin`
+- Free tier has email rate limits (~3-4 magic link emails/hour) — password login is preferred
 
 ## File Structure
 ```
@@ -52,6 +58,7 @@ src/
 │   ├── admin/page.tsx
 │   └── auth/callback/route.ts
 middleware.ts               # Root middleware for session handling
+CONTEXT.md
 ```
 
 ## Running Locally

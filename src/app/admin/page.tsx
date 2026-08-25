@@ -14,7 +14,7 @@ export default async function AdminPage() {
 
   const { data: memberships } = await supabase
     .from("project_members")
-    .select("id")
+    .select("project_id")
     .eq("user_id", user.id)
     .eq("is_admin", true)
     .limit(1);

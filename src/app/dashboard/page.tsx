@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import SignOutButton from "@/components/sign-out-button";
@@ -18,6 +19,15 @@ export default async function DashboardPage() {
   } = await supabase.auth.getUser();
 
   if (!user) redirect("/login");
+
+  const { data: memberships } = await supabase
+    .from("project_members")
+    .select("project_id")
+    .eq("user_id", user.id)
+    .eq("is_admin", true)
+    .limit(1);
+
+  const isAdmin = (memberships ?? []).length > 0;
 
   const { data: assets } = await supabase
     .from("assets")
@@ -45,6 +55,14 @@ export default async function DashboardPage() {
           <h1 className="text-xl font-bold text-gray-900">Dashboard</h1>
           <div className="flex items-center gap-4">
             <span className="text-sm text-gray-600">{user.email}</span>
+            {isAdmin && (
+              <Link
+                href="/admin"
+                className="text-sm bg-indigo-600 text-white px-3 py-1.5 rounded-md hover:bg-indigo-700 transition-colors"
+              >
+                Admin
+              </Link>
+            )}
             <SignOutButton />
           </div>
         </div>
