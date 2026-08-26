@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 
 interface Comment {
   id: string;
-  body: string;
+  content: string;
   created_at: string;
   user_email: string;
 }
@@ -13,13 +13,13 @@ interface Comment {
 export default function AssetComments({ assetId }: { assetId: string }) {
   const supabase = createClient();
   const [comments, setComments] = useState<Comment[]>([]);
-  const [body, setBody] = useState("");
+  const [content, setContent] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     supabase
       .from("comments")
-      .select("id, body, created_at, user_email:profiles(email)")
+      .select("id, content, created_at, user_email:profiles(email)")
       .eq("asset_id", assetId)
       .order("created_at", { ascending: true })
       .then(({ data }) => {
@@ -27,7 +27,7 @@ export default function AssetComments({ assetId }: { assetId: string }) {
         setComments(
           data.map((c: Record<string, unknown>) => ({
             id: c.id as string,
-            body: c.body as string,
+            content: c.content as string,
             created_at: c.created_at as string,
             user_email:
               (c.user_email as { email: string } | null)?.email ?? "Unknown",
@@ -38,7 +38,7 @@ export default function AssetComments({ assetId }: { assetId: string }) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!body.trim()) return;
+    if (!content.trim()) return;
 
     setLoading(true);
 
@@ -54,7 +54,7 @@ export default function AssetComments({ assetId }: { assetId: string }) {
     const { error } = await supabase.from("comments").insert({
       asset_id: assetId,
       user_id: user.id,
-      body: body.trim(),
+      content: content.trim(),
     });
 
     if (!error) {
@@ -62,12 +62,12 @@ export default function AssetComments({ assetId }: { assetId: string }) {
         ...prev,
         {
           id: crypto.randomUUID(),
-          body: body.trim(),
+          content: content.trim(),
           created_at: new Date().toISOString(),
           user_email: user.email ?? "Unknown",
         },
       ]);
-      setBody("");
+      setContent("");
     }
 
     setLoading(false);
@@ -84,7 +84,7 @@ export default function AssetComments({ assetId }: { assetId: string }) {
               <span className="text-slate-400">
                 {new Date(c.created_at).toLocaleDateString()}
               </span>
-              <p className="text-slate-600 mt-0.5">{c.body}</p>
+              <p className="text-slate-600 mt-0.5">{c.content}</p>
             </div>
           ))}
         </div>
@@ -93,14 +93,14 @@ export default function AssetComments({ assetId }: { assetId: string }) {
       <form onSubmit={handleSubmit} className="flex gap-2">
         <input
           type="text"
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
           placeholder="Add a comment..."
           className="flex-1 px-2 py-1.5 border border-slate-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
         <button
           type="submit"
-          disabled={loading || !body.trim()}
+          disabled={loading || !content.trim()}
           className="px-2 py-1.5 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-700 disabled:opacity-50"
         >
           Post

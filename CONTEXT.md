@@ -28,7 +28,7 @@ A Next.js 14 (App Router) client portal with Supabase authentication and asset m
 - `project_members` — `user_id`, `project_id`, `is_admin` (composite primary key, no `id` column)
 - `assets` — `id`, `title`, `file_url`, `project_id`, `version` (int, default 1), `parent_asset_id` (uuid, nullable), `created_at`
 - `profiles` — `id`, `email` (used for email → user_id lookup in admin)
-- `comments` — `id`, `asset_id`, `user_id`, `body`, `created_at`
+- `comments` — `id`, `asset_id` (references specific asset version), `user_id`, `content`, `created_at`, `updated_at`, `parent_comment_id` (nullable, for future threading)
 
 ## RLS Policies (required)
 Authenticated users need read/write access to all tables and storage. Run this in Supabase SQL Editor:
@@ -42,6 +42,11 @@ CREATE POLICY "Authenticated can read storage" ON storage.objects FOR SELECT TO 
 CREATE POLICY "Authenticated can read comments" ON comments FOR SELECT TO authenticated USING (true);
 CREATE POLICY "Authenticated can insert comments" ON comments FOR INSERT TO authenticated WITH CHECK (true);
 ```
+
+Comments RLS uses project-membership checks (see `supabase/migrations/` for full SQL):
+- SELECT/INSERT: user must be a member of the project the asset belongs to
+- UPDATE: user must be the comment author + project member
+- DELETE: user must be the author OR an admin of the project
 
 ## Supabase Setup Notes
 - Auth callback URL must be whitelisted: `http://localhost:3000/auth/callback`
