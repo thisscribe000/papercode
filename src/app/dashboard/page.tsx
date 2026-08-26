@@ -2,14 +2,24 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import SignOutButton from "@/components/sign-out-button";
-import AssetComments from "@/components/asset-comments";
+import AssetCard from "@/components/asset-card";
 
-interface Asset {
+interface RawAsset {
   id: string;
   title: string;
   file_url: string;
   created_at: string;
-  project_name: string;
+  version: number;
+  parent_asset_id: string | null;
+  project_name: { name: string } | null;
+}
+
+interface AssetVersion {
+  id: string;
+  title: string;
+  file_url: string;
+  created_at: string;
+  version: number;
 }
 
 export default async function DashboardPage() {
@@ -32,22 +42,49 @@ export default async function DashboardPage() {
 
   const { data: assets } = await supabase
     .from("assets")
-    .select("id, title, file_url, created_at, project_name:projects(name)")
+    .select("id, title, file_url, created_at, version, parent_asset_id, project_name:projects(name)")
     .order("created_at", { ascending: false });
 
-  const grouped: Record<string, Asset[]> = {};
-  (assets ?? []).forEach((asset: Record<string, unknown>) => {
-    const project = asset.project_name as { name: string } | null;
-    const projectName = project?.name ?? "Unknown Project";
-    if (!grouped[projectName]) grouped[projectName] = [];
-    grouped[projectName].push({
-      id: asset.id as string,
-      title: asset.title as string,
-      file_url: asset.file_url as string,
-      created_at: asset.created_at as string,
-      project_name: projectName,
+  const raw: RawAsset[] = (assets ?? []).map((a: Record<string, unknown>) => ({
+    id: a.id as string,
+    title: a.title as string,
+    file_url: a.file_url as string,
+    created_at: a.created_at as string,
+    version: (a.version as number) ?? 1,
+    parent_asset_id: (a.parent_asset_id as string) ?? null,
+    project_name: a.project_name as { name: string } | null,
+  }));
+
+  const replacedIds = new Set(raw.filter((a) => a.parent_asset_id).map((a) => a.parent_asset_id));
+
+  const heads = raw.filter((a) => !replacedIds.has(a.id));
+
+  const chains: Record<string, AssetVersion[]> = {};
+  for (const asset of raw) {
+    const key = asset.parent_asset_id ?? asset.id;
+    if (!chains[key]) chains[key] = [];
+    chains[key].push({
+      id: asset.id,
+      title: asset.title,
+      file_url: asset.file_url,
+      created_at: asset.created_at,
+      version: asset.version,
     });
-  });
+  }
+  for (const key of Object.keys(chains)) {
+    chains[key].sort((a, b) => b.version - a.version);
+  }
+
+  const grouped: Record<string, { latest: AssetVersion; older: AssetVersion[]; total: number }[]> = {};
+  for (const head of heads) {
+    const chainKey = head.parent_asset_id ?? head.id;
+    const chain = chains[chainKey] ?? [head];
+    const latest = chain[0];
+    const older = chain.slice(1);
+    const projectName = head.project_name?.name ?? "Unknown Project";
+    if (!grouped[projectName]) grouped[projectName] = [];
+    grouped[projectName].push({ latest, older, total: chain.length });
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -91,29 +128,13 @@ export default async function DashboardPage() {
             <section key={projectName} className="mb-10">
               <h2 className="text-base font-semibold text-slate-900 mb-4">{projectName}</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {projectAssets.map((asset) => (
-                  <div key={asset.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
-                    {isImage(asset.file_url) ? (
-                      <img
-                        src={asset.file_url}
-                        alt={asset.title}
-                        className="w-full h-36 object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-36 bg-slate-100 flex items-center justify-center">
-                        <svg className="w-8 h-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                      </div>
-                    )}
-                    <div className="p-3">
-                      <p className="font-medium text-slate-900 text-sm">{asset.title}</p>
-                      <p className="text-xs text-slate-500 mt-1">
-                        {new Date(asset.created_at).toLocaleDateString()}
-                      </p>
-                      <AssetComments assetId={asset.id} />
-                    </div>
-                  </div>
+                {projectAssets.map((item) => (
+                  <AssetCard
+                    key={item.latest.id}
+                    latest={item.latest}
+                    olderVersions={item.older}
+                    totalVersions={item.total}
+                  />
                 ))}
               </div>
             </section>
@@ -122,8 +143,4 @@ export default async function DashboardPage() {
       </main>
     </div>
   );
-}
-
-function isImage(url: string) {
-  return /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(url);
 }

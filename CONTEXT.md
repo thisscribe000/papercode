@@ -26,7 +26,7 @@ A Next.js 14 (App Router) client portal with Supabase authentication and asset m
 ## Database Tables
 - `projects` — `id`, `name`, `status`, `created_at`
 - `project_members` — `user_id`, `project_id`, `is_admin` (composite primary key, no `id` column)
-- `assets` — `id`, `title`, `file_url`, `project_id`, `created_at`
+- `assets` — `id`, `title`, `file_url`, `project_id`, `version` (int, default 1), `parent_asset_id` (uuid, nullable), `created_at`
 - `profiles` — `id`, `email` (used for email → user_id lookup in admin)
 - `comments` — `id`, `asset_id`, `user_id`, `body`, `created_at`
 
@@ -58,7 +58,8 @@ src/
 │   └── middleware.ts      # Session refresh + auth redirect logic
 ├── components/
 │   ├── sign-out-button.tsx
-│   ├── admin-forms.tsx    # Create project, upload asset
+│   ├── admin-forms.tsx    # Create project, upload asset (with version replacement)
+│   ├── asset-card.tsx     # Asset card with version history expand/collapse
 │   └── asset-comments.tsx # Comment list + input per asset card
 ├── app/
 │   ├── layout.tsx

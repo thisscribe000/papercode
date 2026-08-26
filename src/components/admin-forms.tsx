@@ -3,6 +3,12 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 
+interface ExistingAsset {
+  id: string;
+  title: string;
+  version: number;
+}
+
 export default function AdminForms() {
   const supabase = createClient();
 
@@ -14,6 +20,8 @@ export default function AdminForms() {
   const [projectId, setProjectId] = useState("");
   const [title, setTitle] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [replaceAssetId, setReplaceAssetId] = useState("");
+  const [existingAssets, setExistingAssets] = useState<ExistingAsset[]>([]);
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -22,8 +30,7 @@ export default function AdminForms() {
       .from("projects")
       .select("id, name")
       .order("name")
-      .then(({ data, error }) => {
-        console.log("FETCH PROJECTS:", { data, error });
+      .then(({ data }) => {
         if (data) setProjects(data);
       });
   }
@@ -31,6 +38,22 @@ export default function AdminForms() {
   useEffect(() => {
     fetchProjects();
   }, []);
+
+  useEffect(() => {
+    if (!projectId) {
+      setExistingAssets([]);
+      setReplaceAssetId("");
+      return;
+    }
+    supabase
+      .from("assets")
+      .select("id, title, version")
+      .eq("project_id", projectId)
+      .order("title")
+      .then(({ data }) => {
+        if (data) setExistingAssets(data);
+      });
+  }, [projectId]);
 
   async function handleCreateProject(e: React.FormEvent) {
     e.preventDefault();
@@ -41,8 +64,6 @@ export default function AdminForms() {
       .from("projects")
       .insert({ name: projectName, status: "active" })
       .select("id, name");
-
-    console.log("CREATE PROJECT result:", { data, error });
 
     setProjectLoading(false);
 
@@ -78,20 +99,30 @@ export default function AdminForms() {
 
     const { data: urlData } = supabase.storage.from("assets").getPublicUrl(path);
 
-    const { error: dbErr } = await supabase.from("assets").insert({
+    const insertData: Record<string, unknown> = {
       title,
       file_url: urlData.publicUrl,
       project_id: projectId,
-    });
+      version: 1,
+    };
+
+    if (replaceAssetId) {
+      const replaced = existingAssets.find((a) => a.id === replaceAssetId);
+      insertData.parent_asset_id = replaceAssetId;
+      insertData.version = (replaced?.version ?? 1) + 1;
+    }
+
+    const { error: dbErr } = await supabase.from("assets").insert(insertData);
 
     setLoading(false);
 
     if (dbErr) {
       setMsg(`DB insert failed: ${dbErr.message}`);
     } else {
-      setMsg("Uploaded!");
+      setMsg(replaceAssetId ? "New version uploaded!" : "Uploaded!");
       setTitle("");
       setFile(null);
+      setReplaceAssetId("");
     }
   }
 
@@ -142,6 +173,21 @@ export default function AdminForms() {
             ))}
           </select>
 
+          {existingAssets.length > 0 && (
+            <select
+              value={replaceAssetId}
+              onChange={(e) => setReplaceAssetId(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+            >
+              <option value="">New asset (no replacement)</option>
+              {existingAssets.map((a) => (
+                <option key={a.id} value={a.id}>
+                  Replace: {a.title} (v{a.version})
+                </option>
+              ))}
+            </select>
+          )}
+
           <input
             type="text"
             placeholder="Title"
@@ -163,7 +209,7 @@ export default function AdminForms() {
             disabled={loading}
             className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50"
           >
-            {loading ? "Uploading..." : "Upload"}
+            {loading ? "Uploading..." : replaceAssetId ? "Upload new version" : "Upload"}
           </button>
         </form>
 
