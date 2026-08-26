@@ -20,6 +20,7 @@ A Next.js 14 (App Router) client portal with Supabase authentication and asset m
 |---|---|---|
 | `/login` | Public | Email + password login (default), toggleable to magic link |
 | `/dashboard` | Protected | Assets grouped by project, cards with title/image/date. Admin users see an "Admin" link in the header |
+| `/dashboard/[assetId]` | Protected | Asset review view: large preview, version selector, version-specific comments with edit/delete |
 | `/admin` | Protected | Create projects, upload assets. Client component — auth handled by middleware |
 | `/auth/callback` | Public | Exchanges magic link code for session, sets cookies, redirects to `/dashboard` |
 
@@ -69,6 +70,7 @@ src/
 │   ├── page.tsx           # Redirects to /login
 │   ├── login/page.tsx
 │   ├── dashboard/page.tsx
+│   ├── dashboard/[assetId]/page.tsx  # Asset review page (server component)
 │   ├── admin/page.tsx
 │   └── auth/callback/route.ts
 middleware.ts               # Root middleware for session handling
