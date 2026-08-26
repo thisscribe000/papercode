@@ -63,7 +63,8 @@ src/
 ├── components/
 │   ├── sign-out-button.tsx
 │   ├── admin-forms.tsx    # Create project, upload asset (with version replacement)
-│   ├── asset-card.tsx     # Asset card with version history expand/collapse
+│   ├── asset-card.tsx     # Asset card with version history expand/collapse, links to review
+│   ├── asset-review.tsx   # Full review: preview, version selector, comments with edit/delete
 │   └── asset-comments.tsx # Comment list + input per asset card
 ├── app/
 │   ├── layout.tsx
