@@ -1,19 +1,23 @@
--- Migration: Rebuild comments table for version-scoped feedback with threading support
+-- Migration: Create comments table with version-scoped feedback and threading support
 -- Run this in Supabase SQL Editor
 
 -- ============================================================
--- 1. Add new columns
+-- 1. Create the comments table
 -- ============================================================
-ALTER TABLE comments ADD COLUMN content text;
-ALTER TABLE comments ADD COLUMN updated_at timestamptz DEFAULT now();
-ALTER TABLE comments ADD COLUMN parent_comment_id uuid REFERENCES comments(id);
+CREATE TABLE comments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  asset_id uuid NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES auth.users(id),
+  content text NOT NULL,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  parent_comment_id uuid REFERENCES comments(id)
+);
 
 -- ============================================================
--- 2. Migrate data: body -> content
+-- 2. Enable RLS
 -- ============================================================
-UPDATE comments SET content = body;
-ALTER TABLE comments ALTER COLUMN content SET NOT NULL;
-ALTER TABLE comments DROP COLUMN body;
+ALTER TABLE comments ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================
 -- 3. Add indexes for common query patterns
@@ -24,13 +28,7 @@ CREATE INDEX idx_comments_created_at ON comments(created_at);
 CREATE INDEX idx_comments_parent_comment_id ON comments(parent_comment_id);
 
 -- ============================================================
--- 4. Drop old wide-open RLS policies
--- ============================================================
-DROP POLICY IF EXISTS "Authenticated can read comments" ON comments;
-DROP POLICY IF EXISTS "Authenticated can insert comments" ON comments;
-
--- ============================================================
--- 5. Add project-membership-based RLS policies
+-- 4. RLS policies with project-membership checks
 --
 --    Access rule: a user can reach a comment only through
 --    comment -> asset -> project -> project_members -> auth.uid()
