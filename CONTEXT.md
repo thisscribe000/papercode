@@ -28,6 +28,7 @@ A Next.js 14 (App Router) client portal with Supabase authentication and asset m
 - `project_members` — `user_id`, `project_id`, `is_admin` (composite primary key, no `id` column)
 - `assets` — `id`, `title`, `file_url`, `project_id`, `created_at`
 - `profiles` — `id`, `email` (used for email → user_id lookup in admin)
+- `comments` — `id`, `asset_id`, `user_id`, `body`, `created_at`
 
 ## RLS Policies (required)
 Authenticated users need read/write access to all tables and storage. Run this in Supabase SQL Editor:
@@ -38,6 +39,8 @@ CREATE POLICY "Authenticated can read assets" ON assets FOR SELECT TO authentica
 CREATE POLICY "Authenticated can insert assets" ON assets FOR INSERT TO authenticated WITH CHECK (true);
 CREATE POLICY "Authenticated can upload" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'assets');
 CREATE POLICY "Authenticated can read storage" ON storage.objects FOR SELECT TO authenticated USING (bucket_id = 'assets');
+CREATE POLICY "Authenticated can read comments" ON comments FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Authenticated can insert comments" ON comments FOR INSERT TO authenticated WITH CHECK (true);
 ```
 
 ## Supabase Setup Notes
@@ -55,7 +58,8 @@ src/
 │   └── middleware.ts      # Session refresh + auth redirect logic
 ├── components/
 │   ├── sign-out-button.tsx
-│   └── admin-forms.tsx    # Create project, upload asset
+│   ├── admin-forms.tsx    # Create project, upload asset
+│   └── asset-comments.tsx # Comment list + input per asset card
 ├── app/
 │   ├── layout.tsx
 │   ├── page.tsx           # Redirects to /login

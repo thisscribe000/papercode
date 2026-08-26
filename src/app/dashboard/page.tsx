@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import SignOutButton from "@/components/sign-out-button";
+import AssetComments from "@/components/asset-comments";
 
 interface Asset {
   id: string;
@@ -110,6 +111,7 @@ export default async function DashboardPage() {
                       <p className="text-xs text-slate-500 mt-1">
                         {new Date(asset.created_at).toLocaleDateString()}
                       </p>
+                      <AssetComments assetId={asset.id} />
                     </div>
                   </div>
                 ))}
