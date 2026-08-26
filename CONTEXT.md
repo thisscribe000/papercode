@@ -39,8 +39,6 @@ CREATE POLICY "Authenticated can read assets" ON assets FOR SELECT TO authentica
 CREATE POLICY "Authenticated can insert assets" ON assets FOR INSERT TO authenticated WITH CHECK (true);
 CREATE POLICY "Authenticated can upload" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'assets');
 CREATE POLICY "Authenticated can read storage" ON storage.objects FOR SELECT TO authenticated USING (bucket_id = 'assets');
-CREATE POLICY "Authenticated can read comments" ON comments FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Authenticated can insert comments" ON comments FOR INSERT TO authenticated WITH CHECK (true);
 ```
 
 Comments RLS uses project-membership checks (see `supabase/migrations/` for full SQL):
