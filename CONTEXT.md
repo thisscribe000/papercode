@@ -20,19 +20,25 @@ A Next.js 14 (App Router) client portal with Supabase authentication and asset m
 |---|---|---|
 | `/login` | Public | Email + password login (default), toggleable to magic link |
 | `/dashboard` | Protected | Assets grouped by project, cards with title/image/date. Admin users see an "Admin" link in the header |
-| `/admin` | Protected (admin) | Create projects, add clients, upload assets. Only visible if user has `is_admin = true` in `project_members` |
+| `/admin` | Protected | Create projects, upload assets. Client component — auth handled by middleware |
 | `/auth/callback` | Public | Exchanges magic link code for session, sets cookies, redirects to `/dashboard` |
 
-## Database Tables (actual schema)
+## Database Tables
 - `projects` — `id`, `name`, `status`, `created_at`
 - `project_members` — `user_id`, `project_id`, `is_admin` (composite primary key, no `id` column)
 - `assets` — `id`, `title`, `file_url`, `project_id`, `created_at`
 - `profiles` — `id`, `email` (used for email → user_id lookup in admin)
 
-## Supabase RLS Policies (expected)
-- Users can read assets for projects they belong to
-- Admins can insert projects, project_members, and assets
-- Storage bucket `assets` allows authenticated uploads
+## RLS Policies (required)
+Authenticated users need read/write access to all tables and storage. Run this in Supabase SQL Editor:
+```sql
+CREATE POLICY "Authenticated can read projects" ON projects FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Authenticated can insert projects" ON projects FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Authenticated can read assets" ON assets FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Authenticated can insert assets" ON assets FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Authenticated can upload" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'assets');
+CREATE POLICY "Authenticated can read storage" ON storage.objects FOR SELECT TO authenticated USING (bucket_id = 'assets');
+```
 
 ## Supabase Setup Notes
 - Auth callback URL must be whitelisted: `http://localhost:3000/auth/callback`
@@ -49,7 +55,7 @@ src/
 │   └── middleware.ts      # Session refresh + auth redirect logic
 ├── components/
 │   ├── sign-out-button.tsx
-│   └── admin-forms.tsx    # Create project, add client, upload asset
+│   └── admin-forms.tsx    # Create project, upload asset
 ├── app/
 │   ├── layout.tsx
 │   ├── page.tsx           # Redirects to /login
@@ -58,7 +64,6 @@ src/
 │   ├── admin/page.tsx
 │   └── auth/callback/route.ts
 middleware.ts               # Root middleware for session handling
-CONTEXT.md
 ```
 
 ## Running Locally
