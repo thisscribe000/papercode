@@ -1,12 +1,12 @@
-# Client Portal
+# PaperCode
 
-A Next.js 14 (App Router) client portal with Supabase authentication and asset management.
+A Next.js 14 (App Router) developer/client project management and design-review workspace with Supabase authentication.
 
 ## Tech Stack
 - **Framework:** Next.js 14, App Router
 - **Auth:** Supabase email/password + magic-link (`@supabase/ssr` + `@supabase/supabase-js`)
 - **Styling:** Tailwind CSS (dark gradient login, light dashboard/admin)
-- **Database:** Supabase PostgreSQL (projects, project_members, assets tables with RLS)
+- **Database:** Supabase PostgreSQL (projects, project_members, assets, comments tables with RLS)
 - **Storage:** Supabase Storage bucket `assets`
 
 ## Environment Variables
@@ -19,9 +19,11 @@ A Next.js 14 (App Router) client portal with Supabase authentication and asset m
 | Route | Auth | Description |
 |---|---|---|
 | `/login` | Public | Email + password login (default), toggleable to magic link |
-| `/dashboard` | Protected | Assets grouped by project, cards with title/image/date. Admin users see an "Admin" link in the header |
-| `/dashboard/[assetId]` | Protected | Asset review view: large preview, version selector, version-specific comments with edit/delete |
-| `/admin` | Protected | Create projects, upload assets. Client component — auth handled by middleware |
+| `/dashboard` | Protected | Client view: assets grouped by project, cards with title/image/date |
+| `/dashboard/[assetId]` | Protected | Client asset review: large preview, version selector, comments |
+| `/admin` | Protected | **Projects landing**: list of admin's projects with status, client, screen/comment counts |
+| `/admin/projects/[projectId]` | Protected | **Project workspace**: header, screens grid, upload screen, feedback indicators |
+| `/admin/projects/[projectId]/review/[assetId]` | Protected | **Admin screen review**: reuses AssetReview with admin back-nav |
 | `/auth/callback` | Public | Exchanges magic link code for session, sets cookies, redirects to `/dashboard` |
 
 ## Database Tables
@@ -57,24 +59,30 @@ Comments RLS uses project-membership checks (see `supabase/migrations/` for full
 ```
 src/
 ├── lib/supabase/
-│   ├── client.ts          # Browser client (createBrowserClient)
-│   ├── server.ts          # Server client (createServerClient + cookies)
-│   └── middleware.ts      # Session refresh + auth redirect logic
+│   ├── client.ts              # Browser client (createBrowserClient)
+│   ├── server.ts              # Server client (createServerClient + cookies)
+│   └── middleware.ts          # Session refresh + auth redirect logic
 ├── components/
 │   ├── sign-out-button.tsx
-│   ├── admin-forms.tsx    # Create project, upload asset (with version replacement)
-│   ├── asset-card.tsx     # Asset card with version history expand/collapse, links to review
-│   ├── asset-review.tsx   # Full review: preview, version selector, comments with edit/delete
-│   └── asset-comments.tsx # Comment list + input per asset card
+│   ├── admin-forms.tsx        # Legacy: create project + upload asset (unused in new admin)
+│   ├── projects-list.tsx      # Admin: project cards grid + create project modal
+│   ├── project-workspace.tsx  # Admin: project header, screens grid, upload trigger
+│   ├── project-upload-form.tsx # Admin: upload modal with auto project_id + version replacement
+│   ├── asset-card.tsx         # Client: asset card with version history expand/collapse
+│   ├── asset-review.tsx       # Shared: full review with preview, version selector, comments
+│   └── asset-comments.tsx     # Legacy: standalone comments component (unused)
 ├── app/
 │   ├── layout.tsx
-│   ├── page.tsx           # Redirects to /login
+│   ├── page.tsx               # Redirects to /login
 │   ├── login/page.tsx
-│   ├── dashboard/page.tsx
-│   ├── dashboard/[assetId]/page.tsx  # Asset review page (server component)
-│   ├── admin/page.tsx
+│   ├── dashboard/page.tsx             # Client: assets grouped by project
+│   ├── dashboard/[assetId]/page.tsx   # Client: asset review page
+│   ├── admin/page.tsx                 # Admin: projects landing page
+│   ├── admin/projects/[projectId]/
+│   │   ├── page.tsx                   # Admin: project workspace (server component)
+│   │   └── review/[assetId]/page.tsx  # Admin: screen review (reuses AssetReview)
 │   └── auth/callback/route.ts
-middleware.ts               # Root middleware for session handling
+middleware.ts                   # Root middleware for session handling
 ```
 
 ## Running Locally
